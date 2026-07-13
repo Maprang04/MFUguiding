@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fffdfd" />
+      <stop offset="100%" stop-color="#f8ebeb" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#b36c6c" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <rect x="20" y="20" width="960" height="580" rx="24" fill="url(#bg)" stroke="#d8b0b0" stroke-width="6" />
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="70" width="220" height="170" rx="22" fill="#ffe4c5" stroke="#d08d3a" stroke-width="5" />
+    <rect x="320" y="70" width="360" height="120" rx="18" fill="#f6e4e4" stroke="#d7a6a6" stroke-width="5" />
+    <rect x="320" y="210" width="360" height="300" rx="18" fill="#f8efef" stroke="#d3a6a6" stroke-width="5" />
+    <rect x="700" y="70" width="240" height="170" rx="18" fill="#f8e7e7" stroke="#cf9d9d" stroke-width="5" />
+    <rect x="700" y="270" width="240" height="220" rx="18" fill="#f8efef" stroke="#cf9d9d" stroke-width="5" />
+    <rect x="700" y="500" width="240" height="70" rx="18" fill="#f9e0e0" stroke="#cf9d9d" stroke-width="5" />
+  </g>
+
+  <g stroke="#d6a0a0" stroke-width="4" opacity="0.55">
+    <line x1="70" y1="40" x2="930" y2="40" />
+    <line x1="70" y1="120" x2="930" y2="120" />
+    <line x1="70" y1="200" x2="930" y2="200" />
+    <line x1="70" y1="280" x2="930" y2="280" />
+    <line x1="70" y1="360" x2="930" y2="360" />
+    <line x1="70" y1="440" x2="930" y2="440" />
+    <line x1="70" y1="520" x2="930" y2="520" />
+    <line x1="70" y1="40" x2="70" y2="580" />
+    <line x1="270" y1="40" x2="270" y2="580" />
+    <line x1="470" y1="40" x2="470" y2="580" />
+    <line x1="670" y1="40" x2="670" y2="580" />
+    <line x1="870" y1="40" x2="870" y2="580" />
+  </g>
+
+  <g font-family="Arial, sans-serif" font-weight="700" text-anchor="middle">
+    <text x="180" y="155" font-size="38" fill="#8c3d3d">Entrance</text>
+    <text x="500" y="122" font-size="34" fill="#7d3939">Main Corridor</text>
+    <text x="500" y="255" font-size="32" fill="#7a3434">Hallway / Center</text>
+    <text x="510" y="350" font-size="28" fill="#8a3a3a">Room 1</text>
+    <text x="510" y="420" font-size="28" fill="#8a3a3a">Room 3</text>
+    <text x="850" y="155" font-size="28" fill="#8a3a3a">Room 2</text>
+    <text x="820" y="335" font-size="26" fill="#7d4b4b">Small Hallway</text>
+    <text x="820" y="548" font-size="26" fill="#7d4b4b">Exit</text>
+  </g>
+
+  <g fill="#d62828" opacity="0.85">
+    <circle cx="220" cy="200" r="12" />
+    <circle cx="500" cy="190" r="12" />
+    <circle cx="500" cy="360" r="12" />
+    <circle cx="850" cy="155" r="12" />
+    <circle cx="820" cy="380" r="12" />
+  </g>
+</svg>
