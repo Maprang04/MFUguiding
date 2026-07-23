@@ -1,56 +1,45 @@
-"""
-load_data.py
---------------
-Shared data-loading helper for the training scripts. Reads the WiFi
-fingerprint dataset straight from MySQL (same DB the Node.js backend
-connects to), and falls back to the CSV snapshot in data/wifi_dataset.csv
-if the database isn't reachable (e.g. running this on a machine that
-doesn't have the DB, or before the DB is set up).
+"""Shared MongoDB/CSV data loader for Wi-Fi fingerprint training."""
 
-Configure the connection via environment variables (put these in a
-`.env` file at the project root, or export them in your shell) — this
-mirrors the same connection details used by backend-node's mysql pool:
-
-    DB_HOST=localhost
-    DB_USER=root
-    DB_PASSWORD=
-    DB_NAME=indoor_navigation
-    DB_PORT=3306
-
-If you don't set any of these, the defaults below match the pool config
-you're already using in Node.js:
-
-    host: "localhost", user: "root", password: "", database: "indoor_navigation"
-"""
 import os
+from pathlib import Path
+
 import pandas as pd
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # python-dotenv not installed -> just rely on already-exported env vars
 
-DB_CONFIG = {
-    "host": os.environ.get("DB_HOST", "localhost"),
-    "user": os.environ.get("DB_USER", "root"),
-    "password": os.environ.get("DB_PASSWORD", ""),
-    "database": os.environ.get("DB_NAME", "indoor_navigation"),
-    "port": int(os.environ.get("DB_PORT", "3306")),
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+except ImportError:
+    pass
+
+
+MONGODB_CONFIG = {
+    "uri": os.environ.get("MONGODB_URI", "mongodb://localhost:27017"),
+    "database": os.environ.get("MONGODB_DATABASE", "indoor_navigation"),
+    "wifi_collection": os.environ.get(
+        "MONGODB_WIFI_COLLECTION",
+        "wifi_fingerprints",
+    ),
 }
 
-CSV_FALLBACK_PATH = os.path.join(os.path.dirname(__file__), "wifi_dataset.csv")
+CSV_FALLBACK_PATH = Path(__file__).resolve().with_name("wifi_dataset.csv")
 
 
 def clean_wifi_dataset(df):
-    """Remove invalid/missing RSSI rows and robust per-location outliers.
+    """Remove invalid RSSI rows and robust per-location outliers.
 
     Values at or below -95 dBm are treated as missing AP readings. For each
-    physical reference point, a row is also rejected when any AP differs from
-    that point's median by more than three scaled median absolute deviations.
-    The source database/CSV is never modified.
+    physical reference point, a row is rejected when any AP differs from that
+    point's median by more than three scaled median absolute deviations. The
+    source database/CSV is never modified.
     """
     required = ["ap1", "ap2", "ap3", "x", "y"]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(
+            "Wi-Fi dataset is missing required fields: " + ", ".join(missing)
+        )
+
     cleaned = df.copy()
     cleaned[required] = cleaned[required].apply(pd.to_numeric, errors="coerce")
     cleaned = cleaned.dropna(subset=required)
@@ -61,29 +50,60 @@ def clean_wifi_dataset(df):
     grouped = cleaned.groupby(["x", "y"])[ap_cols]
     medians = grouped.transform("median")
     deviations = (cleaned[ap_cols] - medians).abs()
-    mads = deviations.groupby([cleaned["x"], cleaned["y"]]).transform("median")
-    # A zero MAD is common in a small fingerprint set; use 1 dBm so that
-    # identical readings remain valid while obvious deviations are rejected.
+    mads = deviations.groupby(
+        [cleaned["x"], cleaned["y"]]
+    ).transform("median")
     mads = mads.replace(0, 1.0)
     within_limit = deviations <= (3.0 * 1.4826 * mads)
     return cleaned[within_limit.all(axis=1)].reset_index(drop=True)
 
 
+def _load_from_mongodb():
+    from pymongo import MongoClient
+
+    with MongoClient(
+        MONGODB_CONFIG["uri"],
+        serverSelectionTimeoutMS=3000,
+    ) as client:
+        client.admin.command("ping")
+        collection = client[MONGODB_CONFIG["database"]][
+            MONGODB_CONFIG["wifi_collection"]
+        ]
+        documents = list(
+            collection.find(
+                {},
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "ap1": 1,
+                    "ap2": 1,
+                    "ap3": 1,
+                    "x": 1,
+                    "y": 1,
+                    "created_at": 1,
+                },
+            )
+        )
+
+    if not documents:
+        raise ValueError("MongoDB fingerprint collection is empty")
+    return pd.DataFrame(documents)
+
+
 def load_wifi_dataset(prefer_db=True, clean=True):
-    """Returns a DataFrame with columns: ap1, ap2, ap3, x, y (+ id/created_at if from DB/CSV).
-    Tries MySQL first (if prefer_db=True), falls back to the CSV snapshot."""
+    """Load fingerprints from MongoDB, falling back to the CSV snapshot."""
     if prefer_db:
         try:
-            from sqlalchemy import create_engine
-            url = (
-                f"mysql+pymysql://{DB_CONFIG['user']}:{DB_CONFIG['password']}"
-                f"@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+            df = _load_from_mongodb()
+            source = (
+                f"MongoDB ({MONGODB_CONFIG['database']}/"
+                f"{MONGODB_CONFIG['wifi_collection']})"
             )
-            engine = create_engine(url, connect_args={"connect_timeout": 3})
-            df = pd.read_sql("SELECT id, ap1, ap2, ap3, x, y, created_at FROM wifi_dataset", engine)
-            source = f"MySQL ({DB_CONFIG['host']}/{DB_CONFIG['database']})"
-        except Exception as e:
-            print(f"[load_data] Could not read from MySQL ({e!r}); falling back to CSV snapshot.")
+        except Exception as error:
+            print(
+                f"[load_data] Could not read from MongoDB ({error!r}); "
+                "falling back to CSV snapshot."
+            )
             df = pd.read_csv(CSV_FALLBACK_PATH)
             source = f"CSV snapshot ({CSV_FALLBACK_PATH})"
     else:
@@ -93,13 +113,22 @@ def load_wifi_dataset(prefer_db=True, clean=True):
     raw_count = len(df)
     if clean:
         df = clean_wifi_dataset(df)
-        print(f"[load_data] Loaded {raw_count} rows from {source}; kept {len(df)} after noise filtering")
+        print(
+            f"[load_data] Loaded {raw_count} rows from {source}; "
+            f"kept {len(df)} after noise filtering"
+        )
     else:
-        print(f"[load_data] Loaded {raw_count} rows from {source} (noise filtering disabled)")
+        print(
+            f"[load_data] Loaded {raw_count} rows from {source} "
+            "(noise filtering disabled)"
+        )
     return df
 
 
 if __name__ == "__main__":
-    df = load_wifi_dataset()
-    print(df.head())
-    print(f"\n{len(df)} rows, {len(df[['x','y']].drop_duplicates())} unique reference points")
+    dataset = load_wifi_dataset()
+    print(dataset.head())
+    print(
+        f"\n{len(dataset)} rows, "
+        f"{len(dataset[['x', 'y']].drop_duplicates())} unique reference points"
+    )

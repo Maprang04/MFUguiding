@@ -4,6 +4,5 @@ scikit-learn
 scipy
 pillow
 joblib
-pymysql
-sqlalchemy
 python-dotenv
+pymongo

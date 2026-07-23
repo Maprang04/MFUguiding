@@ -168,6 +168,27 @@ cd data && python3 load_data.py
 4. เชื่อมต่อกับ frontend/backend template ที่อาจารย์ให้มา
 # Zone navigation simulator (single associated AP + RSSI)
 
+## MongoDB fingerprint storage
+
+Training loads Wi-Fi fingerprints from MongoDB first and falls back to
+`data/wifi_dataset.csv` if MongoDB is unavailable or the collection is empty.
+Copy `.env.example` to `.env` and set the local connection values:
+
+```env
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DATABASE=indoor_navigation
+MONGODB_WIFI_COLLECTION=wifi_fingerprints
+```
+
+Test the loader from the `model` directory:
+
+```powershell
+.\.venv\Scripts\python.exe data\load_data.py
+```
+
+The expected source in the output is
+`MongoDB (indoor_navigation/wifi_fingerprints)`.
+
 The controller-independent MVP reads simulated observations from
 `simulator/observations.json`, confirms roaming after three consecutive
 readings, estimates an AP zone, and recalculates an A* route on each
