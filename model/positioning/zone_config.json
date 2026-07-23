@@ -1,0 +1,61 @@
+{
+  "rssi": {
+    "valid_min_exclusive": -95,
+    "valid_max_exclusive": -20,
+    "window_size": 5,
+    "near_min": -55,
+    "medium_min": -70
+  },
+  "roaming": {
+    "required_confirmations": 3
+  },
+  "ap_zones": {
+    "AP1": {
+      "zone": "RIGHT_WING",
+      "label": "Room 1 / right hallway area",
+      "anchors": {
+        "near": [16.0, 8.0],
+        "medium": [15.0, 6.0],
+        "edge": [14.0, 4.0]
+      }
+    },
+    "AP2": {
+      "zone": "CENTRAL_HALLWAY",
+      "label": "Central hallway / Room 2 area",
+      "anchors": {
+        "near": [11.0, 7.0],
+        "medium": [12.0, 4.0],
+        "edge": [9.0, 3.5]
+      }
+    },
+    "AP3": {
+      "zone": "LEFT_WING",
+      "label": "Room 3 / left hallway area",
+      "anchors": {
+        "near": [3.0, 2.0],
+        "medium": [6.0, 2.0],
+        "edge": [9.0, 3.5]
+      }
+    }
+  },
+  "transitions": {
+    "AP3->AP2": [[9.0, 3.5]],
+    "AP2->AP3": [[9.0, 3.5]],
+    "AP2->AP1": [[14.0, 4.0]],
+    "AP1->AP2": [[14.0, 4.0]]
+  },
+  "destinations": {
+    "room_1": {
+      "label": "Room 1 entrance",
+      "position": [15.0, 5.0]
+    },
+    "room_2": {
+      "label": "Room 2 entrance",
+      "position": [15.0, 9.0]
+    },
+    "room_3": {
+      "label": "Room 3 entrance",
+      "position": [11.0, 5.0]
+    }
+  }
+}

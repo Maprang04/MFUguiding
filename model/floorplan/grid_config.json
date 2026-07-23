@@ -1,0 +1,22 @@
+{
+  "transform": {
+    "a": 81.75973015049297,
+    "b": 83.54800207576601,
+    "c": -91.0665258711722,
+    "d": 1092.7911826821548
+  },
+  "cell_size_m": 0.25,
+  "x_range": [
+    0,
+    23
+  ],
+  "y_range": [
+    0,
+    12
+  ],
+  "grid_shape": [
+    48,
+    92
+  ],
+  "note": "grid[row, col] where row corresponds to y_range[0] + row*cell_size, col to x_range[0] + col*cell_size. 0=walkable, 1=blocked."
+}

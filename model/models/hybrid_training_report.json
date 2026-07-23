@@ -1,0 +1,11 @@
+{
+  "n_samples": 139,
+  "hybrid_best_k": 1,
+  "hybrid_cv_mean_error_m": 1.346234878772783,
+  "zone_sample_counts": {
+    "AP1": 41,
+    "AP2": 46,
+    "AP3": 52
+  },
+  "note": "'zone' = the AP with the strongest RSSI in a reading, simulating which AP the phone would actually roam/associate to. This is used as a coarse, robust first signal; the KNN fine-position step is restricted to training samples from the same zone when enough data exists, otherwise falls back to the global model."
+}
