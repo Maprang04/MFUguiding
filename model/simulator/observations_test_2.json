@@ -1,0 +1,15 @@
+[
+  {"client_id": "test-user-2", "associated_ap": "AP1", "rssi": -58, "timestamp": "2026-07-24T13:00:00+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP1", "rssi": -61, "timestamp": "2026-07-24T13:00:02+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP1", "rssi": -59, "timestamp": "2026-07-24T13:00:04+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP2", "rssi": -100, "timestamp": "2026-07-24T13:00:06+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP2", "rssi": -74, "timestamp": "2026-07-24T13:00:08+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP1", "rssi": -62, "timestamp": "2026-07-24T13:00:10+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP2", "rssi": -71, "timestamp": "2026-07-24T13:00:12+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP2", "rssi": -67, "timestamp": "2026-07-24T13:00:14+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP2", "rssi": -64, "timestamp": "2026-07-24T13:00:16+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP3", "rssi": -75, "timestamp": "2026-07-24T13:00:18+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP3", "rssi": -69, "timestamp": "2026-07-24T13:00:20+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP3", "rssi": -63, "timestamp": "2026-07-24T13:00:22+07:00"},
+  {"client_id": "test-user-2", "associated_ap": "AP3", "rssi": -60, "timestamp": "2026-07-24T13:00:24+07:00"}
+]

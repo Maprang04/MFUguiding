@@ -7,6 +7,7 @@
     "test": "DOTENV_CONFIG_PATH=.env.test node -r dotenv/config -r ./test/node-test-setup.js --test server/Project/accounts/service/*.test.js server/Project/settings/service/*.test.js",
     "test:iam-sdk": "node -r ./test/node-test-setup.js --test server/Project/security/service/iam-admin-client.test.js",
     "test:contracts": "node --test test/*.test.js",
+    "test:navigation": "node -r ./test/node-test-setup.js --test --test-isolation=none server/Project/navigation/test/*.test.js",
     "test:all": "npm run test && npm run test:iam-sdk && npm run test:contracts",
     "migrate:account-hr-context": "node scripts/migrate-account-hr-context.js",
     "register:iam": "node -r dotenv/config scripts/register-newSystem-iam-client.js",
