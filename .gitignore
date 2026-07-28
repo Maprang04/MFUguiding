@@ -9,3 +9,4 @@ frontend-vue/tests/e2e/reports/
 *.log
 backend-node/backups/
 .DS_Store
+model/.venv/
