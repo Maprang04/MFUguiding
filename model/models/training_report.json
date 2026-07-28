@@ -1,0 +1,11 @@
+{
+  "n_samples": 139,
+  "n_unique_locations": 18,
+  "knn_best_k": 2,
+  "knn_cv_mean_error_m": 1.513663900908099,
+  "knn_cv_std_error_m": 0.1918168736898748,
+  "rf_cv_mean_error_m": 1.7288497329683683,
+  "rf_cv_std_error_m": 0.2493432261452026,
+  "recommended_model": "fingerprint_knn.joblib",
+  "note": "Errors are cross-validated mean Euclidean distance (meters) between predicted and true position. With only 8 reference points, this model can reliably say 'you are closest to reference point X' but has no data to interpolate positions BETWEEN reference points confidently. Collect more reference points (denser grid) to improve resolution."
+}

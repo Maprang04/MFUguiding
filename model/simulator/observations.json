@@ -1,0 +1,13 @@
+[
+  {"client_id": "demo-user", "associated_ap": "AP3", "rssi": -61, "timestamp": "2026-07-22T09:00:00+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP3", "rssi": -63, "timestamp": "2026-07-22T09:00:02+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP3", "rssi": -62, "timestamp": "2026-07-22T09:00:04+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP2", "rssi": -73, "timestamp": "2026-07-22T09:00:06+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP2", "rssi": -69, "timestamp": "2026-07-22T09:00:08+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP2", "rssi": -66, "timestamp": "2026-07-22T09:00:10+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP2", "rssi": -62, "timestamp": "2026-07-22T09:00:12+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP1", "rssi": -72, "timestamp": "2026-07-22T09:00:14+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP1", "rssi": -68, "timestamp": "2026-07-22T09:00:16+07:00"},
+  {"client_id": "demo-user", "associated_ap": "AP1", "rssi": -64, "timestamp": "2026-07-22T09:00:18+07:00"}
+]
+

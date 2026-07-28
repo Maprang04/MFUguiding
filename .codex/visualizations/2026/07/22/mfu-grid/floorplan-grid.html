@@ -1,0 +1,107 @@
+<div id="mfu-floor-grid">
+  <div class="viz-controls">
+    <label class="form-check form-switch">
+      <input id="mfu-minor-grid" class="form-check-input" type="checkbox" checked>
+      <span class="form-check-label">แสดงช่องย่อย 0.25 เมตร</span>
+    </label>
+  </div>
+  <div style="position:relative;width:100%;margin-top:12px;">
+    <img id="mfu-plan-image" src="../../../../../model/floorplan/floorplan_clean.png" alt="ผังชั้นสำหรับระบุตำแหน่ง AP และห้อง" style="display:block;width:100%;height:auto;">
+    <canvas id="mfu-plan-canvas" role="img" aria-label="ผังชั้นซ้อนกริด 0.25 เมตร แกน X จากซ้ายไปขวา แกน Y จากล่างขึ้นบน" style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;"></canvas>
+  </div>
+  <div class="card" style="margin-top:12px;padding:12px;">
+    <span class="text-muted">คลิกบนผังเพื่ออ่านพิกัด: </span>
+    <strong id="mfu-coordinate">ยังไม่ได้เลือก</strong>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('mfu-floor-grid');
+      const image = root.querySelector('#mfu-plan-image');
+      const canvas = root.querySelector('#mfu-plan-canvas');
+      const toggle = root.querySelector('#mfu-minor-grid');
+      const coordinate = root.querySelector('#mfu-coordinate');
+      const transform = { a: 81.75973015049297, b: 83.54800207576601, c: -91.0665258711722, d: 1092.7911826821548 };
+      let selected = null;
+
+      function meterToPixel(x, y) {
+        return [transform.a * x + transform.b, transform.c * y + transform.d];
+      }
+
+      function pixelToMeter(px, py) {
+        return [(px - transform.b) / transform.a, (py - transform.d) / transform.c];
+      }
+
+      function themeColor(name, fallback) {
+        return getComputedStyle(root).getPropertyValue(name).trim() || fallback;
+      }
+
+      function draw() {
+        if (!image.naturalWidth) return;
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        const minorColor = themeColor('--muted-foreground', 'gray');
+        const majorColor = themeColor('--primary', 'blue');
+        const markerColor = themeColor('--destructive', 'red');
+
+        if (toggle.checked) {
+          ctx.strokeStyle = minorColor;
+          ctx.globalAlpha = 0.24;
+          ctx.lineWidth = 0.7;
+          for (let x = 0; x <= 23.0001; x += 0.25) {
+            if (Math.abs(x - Math.round(x)) < 0.001) continue;
+            const [px] = meterToPixel(x, 0);
+            ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
+          }
+          for (let y = 0; y <= 12.0001; y += 0.25) {
+            if (Math.abs(y - Math.round(y)) < 0.001) continue;
+            const [, py] = meterToPixel(0, y);
+            ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(canvas.width, py); ctx.stroke();
+          }
+        }
+
+        ctx.globalAlpha = 0.72;
+        ctx.strokeStyle = majorColor;
+        ctx.fillStyle = majorColor;
+        ctx.lineWidth = 1.6;
+        ctx.font = '500 16px sans-serif';
+        for (let x = 0; x <= 23; x += 1) {
+          const [px] = meterToPixel(x, 0);
+          ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
+          if (px >= 0 && px <= canvas.width - 24) ctx.fillText(String(x), px + 3, canvas.height - 8);
+        }
+        for (let y = 0; y <= 12; y += 1) {
+          const [, py] = meterToPixel(0, y);
+          ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(canvas.width, py); ctx.stroke();
+          if (py >= 18 && py <= canvas.height) ctx.fillText(String(y), 6, py - 4);
+        }
+
+        if (selected) {
+          const [px, py] = meterToPixel(selected.x, selected.y);
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = markerColor;
+          ctx.fillStyle = markerColor;
+          ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(px - 15, py); ctx.lineTo(px + 15, py); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(px, py - 15); ctx.lineTo(px, py + 15); ctx.stroke();
+        }
+      }
+
+      image.addEventListener('load', draw);
+      toggle.addEventListener('change', draw);
+      canvas.addEventListener('click', event => {
+        const rect = canvas.getBoundingClientRect();
+        const px = (event.clientX - rect.left) * canvas.width / rect.width;
+        const py = (event.clientY - rect.top) * canvas.height / rect.height;
+        const [rawX, rawY] = pixelToMeter(px, py);
+        const x = Math.max(0, Math.min(23, Math.round(rawX * 4) / 4));
+        const y = Math.max(0, Math.min(12, Math.round(rawY * 4) / 4));
+        selected = { x, y };
+        coordinate.textContent = `(${x.toFixed(2)}, ${y.toFixed(2)}) เมตร`;
+        draw();
+      });
+      if (image.complete) draw();
+    })();
+  </script>
+</div>
