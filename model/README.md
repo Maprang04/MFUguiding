@@ -218,3 +218,33 @@ Run the tests:
 Zone anchors, RSSI bands, roaming confirmation, transitions, and destination
 coordinates are configured in `positioning/zone_config.json`. These are MVP
 calibration values and must be validated on site before production use.
+# Positioning HTTP API
+
+The Node.js backend calls the Python positioning engine over HTTP. Start this
+service before starting the backend:
+
+```powershell
+cd C:\Users\araya\Downloads\MFUguiding\model
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn positioning_api:app --host 127.0.0.1 --port 8001
+```
+
+Health check:
+
+```text
+GET http://127.0.0.1:8001/health
+```
+
+The interactive API documentation is available at:
+
+```text
+http://127.0.0.1:8001/docs
+```
+
+The backend must use:
+
+```env
+POSITIONING_MODE=http
+POSITIONING_SERVICE_URL=http://127.0.0.1:8001
+POSITIONING_SERVICE_TIMEOUT_MS=5000
+```
