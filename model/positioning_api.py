@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
+from typing import Any  # noqa: E402
 
 from positioning.rssi_filter import InvalidRssiError  # noqa: E402
 from positioning.service import PositioningError, PositioningService  # noqa: E402
@@ -34,6 +35,12 @@ class DestinationRequest(BaseModel):
     destination_id: str
 
 
+class ConfigurationRequest(BaseModel):
+    destinations: list[dict[str, Any]]
+    access_points: list[dict[str, Any]]
+    transitions: dict[str, dict[str, float]]
+
+
 @app.exception_handler(PositioningError)
 async def positioning_error_handler(_request: Request, error: PositioningError):
     return JSONResponse(
@@ -53,6 +60,11 @@ async def invalid_rssi_handler(_request: Request, error: InvalidRssiError):
 @app.get("/health")
 def health():
     return service.health()
+
+
+@app.put("/configuration")
+def configure(body: ConfigurationRequest):
+    return service.configure(body.model_dump())
 
 
 @app.post("/sessions", status_code=201)
@@ -78,4 +90,3 @@ def change_destination(session_id: str, body: DestinationRequest):
 @app.delete("/sessions/{session_id}")
 def delete_session(session_id: str):
     return service.delete_session(session_id)
-

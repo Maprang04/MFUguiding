@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'admin_dashboard.dart';
 import 'admin_notification.dart';
+import 'admin_page_chrome.dart';
 import 'admin_setting.dart';
 
 enum DetailLanguage { english, thai }
@@ -20,9 +21,11 @@ class _AdminDetailPageState extends State<AdminDetailPage> {
 
   // แก้ไขภาษาไทยต่างดาวทั้งหมดให้ถูกต้อง
   String get _headerTitle => _isEnglish ? 'Notification' : 'การแจ้งเตือน';
-  String get _bookingDetail => _isEnglish ? 'Booking detail' : 'รายละเอียดการรายงาน';
+  String get _bookingDetail =>
+      _isEnglish ? 'Booking detail' : 'รายละเอียดการรายงาน';
   String get _descriptionTitle => _isEnglish ? 'Description' : 'คำอธิบาย';
-  String get _barrierTypeLabel => _isEnglish ? 'Barrier Type' : 'ประเภทสิ่งกีดขวาง';
+  String get _barrierTypeLabel =>
+      _isEnglish ? 'Barrier Type' : 'ประเภทสิ่งกีดขวาง';
   String get _bookingTimeLabel => _isEnglish ? 'Booking time' : 'เวลา';
   String get _bookingDateLabel => _isEnglish ? 'Booking date' : 'วันที่';
   String get _bookedByLabel => _isEnglish ? 'Booked by' : 'ผู้แจ้ง';
@@ -30,9 +33,6 @@ class _AdminDetailPageState extends State<AdminDetailPage> {
   String get _descriptionText => _isEnglish
       ? 'Temporary barrier blocking the entrance.'
       : 'สิ่งกีดขวางชั่วคราวปิดทางเข้า';
-  String get _dashboardLabel => _isEnglish ? 'Dashboard' : 'แดชบอร์ด';
-  String get _notificationLabel => _isEnglish ? 'Notification' : 'การแจ้งเตือน';
-  String get _settingLabel => _isEnglish ? 'Setting' : 'การตั้งค่า';
 
   void _toggleLanguage() {
     setState(() {
@@ -67,10 +67,11 @@ class _AdminDetailPageState extends State<AdminDetailPage> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _DetailHeader(
+          AdminPageHeader(
             title: _headerTitle,
-            languageCode: _isEnglish ? 'EN' : 'TH',
+            language: _isEnglish ? 'EN' : 'TH',
             onLanguageTap: _toggleLanguage,
+            onBack: () => Navigator.of(context).pop(),
           ),
           Expanded(
             child: SingleChildScrollView(
@@ -138,12 +139,9 @@ class _AdminDetailPageState extends State<AdminDetailPage> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AdminNavigationBar(
         currentIndex: 1,
-        backgroundColor: const Color(0xFF8B0000),
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.white70,
-        type: BottomNavigationBarType.fixed,
+        isEnglish: _isEnglish,
         onTap: (index) {
           if (index == 0) {
             _navigateToDashboard();
@@ -153,25 +151,13 @@ class _AdminDetailPageState extends State<AdminDetailPage> {
             _navigateToSetting();
           }
         },
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.map_outlined),
-            label: _dashboardLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.mail_outline),
-            label: _notificationLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.settings_outlined),
-            label: _settingLabel,
-          ),
-        ],
       ),
     );
   }
 }
 
+// Legacy header retained for reference while the shared chrome is in use.
+// ignore: unused_element
 class _DetailHeader extends StatelessWidget {
   final String title;
   final String languageCode;
@@ -233,10 +219,7 @@ class _DetailCard extends StatelessWidget {
   final String title;
   final List<_DetailRowData> items;
 
-  const _DetailCard({
-    required this.title,
-    required this.items,
-  });
+  const _DetailCard({required this.title, required this.items});
 
   @override
   Widget build(BuildContext context) {

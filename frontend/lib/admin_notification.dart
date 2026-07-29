@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'admin_dashboard.dart';
 import 'admin_detail.dart';
+import 'admin_page_chrome.dart';
 import 'admin_setting.dart';
 
 enum NotificationLanguage { english, thai }
@@ -24,21 +25,23 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
   // แก้ไขข้อความต่างดาวเป็นภาษาไทยที่ถูกต้อง
   String get _title => _isEnglish ? 'Notification' : 'การแจ้งเตือน';
   String get _barrierTab => _isEnglish ? 'Barrier Report' : 'รายงานสิ่งกีดขวาง';
-  String get _emergencyTab => _isEnglish ? 'Emergency Alerts' : 'แจ้งเตือนฉุกเฉิน';
-  String get _dashboardLabel => _isEnglish ? 'Dashboard' : 'แดชบอร์ด';
-  String get _notificationLabel => _isEnglish ? 'Notification' : 'การแจ้งเตือน';
-  String get _settingLabel => _isEnglish ? 'Setting' : 'การตั้งค่า';
-  String get _approvedLabel => _isEnglish ? 'Appved' : 'อนุมัติแล้ว'; // ตามรูปใช้คำว่า Appved
+  String get _emergencyTab =>
+      _isEnglish ? 'Emergency Alerts' : 'แจ้งเตือนฉุกเฉิน';
+  String get _approvedLabel =>
+      _isEnglish ? 'Appved' : 'อนุมัติแล้ว'; // ตามรูปใช้คำว่า Appved
   String get _rejectLabel => _isEnglish ? 'Reject' : 'ปฏิเสธ';
   String get _seeDetails => _isEnglish ? 'See details' : 'ดูรายละเอียด';
-  String get _makeInProgress => _isEnglish ? 'Make as In Progress' : 'กำลังดำเนินการ';
+  String get _makeInProgress =>
+      _isEnglish ? 'Make as In Progress' : 'กำลังดำเนินการ';
   String get _makeResolved => _isEnglish ? 'Make as Resolved' : 'แก้ไขแล้ว';
   String get _roomLabel => _isEnglish ? 'Room' : 'ห้อง';
   String get _byLabel => _isEnglish ? 'By' : 'โดย';
 
   void _toggleLanguage() {
     setState(() {
-      _language = _isEnglish ? NotificationLanguage.thai : NotificationLanguage.english;
+      _language = _isEnglish
+          ? NotificationLanguage.thai
+          : NotificationLanguage.english;
     });
   }
 
@@ -50,10 +53,7 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 
@@ -84,9 +84,9 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _NotificationHeader(
+          AdminPageHeader(
             title: _title,
-            languageCode: _isEnglish ? 'EN' : 'TH',
+            language: _isEnglish ? 'EN' : 'TH',
             onLanguageTap: _toggleLanguage,
           ),
           Padding(
@@ -107,8 +107,8 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
                 children: [
                   if (_selectedTab == NotificationTab.barrierReport) ...[
                     NotificationBarrierCard(
-                      roomTitle: '${_roomLabel} 301',
-                      reporter: '${_byLabel} Asia Thongkong ',
+                      roomTitle: '$_roomLabel 301',
+                      reporter: '$_byLabel Asia Thongkong ',
                       locationLabel: 'AS',
                       approvedLabel: _approvedLabel,
                       rejectLabel: _rejectLabel,
@@ -119,8 +119,8 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
                     ),
                     const SizedBox(height: 16),
                     NotificationBarrierCard(
-                      roomTitle: '${_roomLabel} 302',
-                      reporter: '${_byLabel} Asia Thongkong ',
+                      roomTitle: '$_roomLabel 302',
+                      reporter: '$_byLabel Asia Thongkong ',
                       locationLabel: 'AS',
                       approvedLabel: _approvedLabel,
                       rejectLabel: _rejectLabel,
@@ -136,7 +136,7 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
                       timeLabel: '10.00 AM',
                       buttonLabel: _makeInProgress,
                       buttonColor: const Color(0xFF007AFF), // สีฟ้าตามภาพ
-                      locationText: '${_roomLabel} 301 2nd Floor, AS',
+                      locationText: '$_roomLabel 301 2nd Floor, AS',
                       onButtonTap: () => _showSnackBar(_makeInProgress),
                     ),
                     const SizedBox(height: 16),
@@ -146,7 +146,7 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
                       timeLabel: '11.00 AM',
                       buttonLabel: _makeResolved,
                       buttonColor: const Color(0xFF10B981), // สีเขียวตามภาพ
-                      locationText: '${_roomLabel} 302 2nd Floor, AS',
+                      locationText: '$_roomLabel 302 2nd Floor, AS',
                       onButtonTap: () => _showSnackBar(_makeResolved),
                     ),
                   ],
@@ -157,12 +157,9 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AdminNavigationBar(
         currentIndex: 1,
-        backgroundColor: const Color(0xFF8B0000),
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.white54,
-        type: BottomNavigationBarType.fixed,
+        isEnglish: _isEnglish,
         onTap: (index) {
           if (index == 0) {
             _navigateToDashboard();
@@ -170,25 +167,13 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
             _navigateToSetting();
           }
         },
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.map_outlined),
-            label: _dashboardLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.mail_outline),
-            label: _notificationLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.settings_outlined),
-            label: _settingLabel,
-          ),
-        ],
       ),
     );
   }
 }
 
+// Legacy header retained for reference while the shared chrome is in use.
+// ignore: unused_element
 class _NotificationHeader extends StatelessWidget {
   final String title;
   final String languageCode;
@@ -206,9 +191,7 @@ class _NotificationHeader extends StatelessWidget {
       height: 140,
       decoration: const BoxDecoration(
         color: Color(0xFF8B0000),
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(24),
-        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: SafeArea(
@@ -436,11 +419,7 @@ class NotificationBarrierCard extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              const Icon(
-                Icons.location_on,
-                size: 18,
-                color: Colors.black87,
-              ),
+              const Icon(Icons.location_on, size: 18, color: Colors.black87),
               const SizedBox(width: 6),
               Text(
                 locationLabel,
@@ -554,11 +533,7 @@ class NotificationAlertCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(
-                Icons.location_on,
-                size: 18,
-                color: Colors.black87,
-              ),
+              const Icon(Icons.location_on, size: 18, color: Colors.black87),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(

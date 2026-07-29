@@ -5,6 +5,7 @@ const router = express.Router();
 const navigation = require('./service/navigation-session.service');
 const config = require('./config/navigation.config');
 const simulatorScenarios = require('./simulator/scenarios');
+const mapAdminRoutes = require('./map-admin.routes');
 
 function clientId(request) {
   return String(
@@ -30,6 +31,8 @@ function fail(response, error) {
   });
 }
 
+router.use('/admin', mapAdminRoutes);
+
 router.get('/health', async function (_request, response) {
   try {
     const result = await navigation.health();
@@ -39,23 +42,41 @@ router.get('/health', async function (_request, response) {
   }
 });
 
-router.get('/destinations', function (_request, response) {
-  return ok(response, { items: navigation.destinations() });
+router.get('/destinations', async function (_request, response) {
+  try {
+    return ok(response, { items: await navigation.destinations() });
+  } catch (error) {
+    return fail(response, error);
+  }
 });
 
-router.get('/destinations/:destinationId', function (request, response) {
-  const item = navigation.destinations().find(function (destination) {
-    return destination.id === request.params.destinationId;
-  });
-  if (!item) return fail(response, Object.assign(new Error('Destination does not exist'), {
-    status: 404,
-    code: 'DESTINATION_NOT_FOUND'
-  }));
-  return ok(response, item);
+router.get('/destinations/:destinationId', async function (request, response) {
+  try {
+    const item = await navigation.destination(request.params.destinationId);
+    if (!item) return fail(response, Object.assign(new Error('Destination does not exist'), {
+      status: 404,
+      code: 'DESTINATION_NOT_FOUND'
+    }));
+    return ok(response, item);
+  } catch (error) {
+    return fail(response, error);
+  }
 });
 
-router.get('/access-points', function (_request, response) {
-  return ok(response, { items: navigation.accessPoints() });
+router.get('/access-points', async function (_request, response) {
+  try {
+    return ok(response, { items: await navigation.accessPoints() });
+  } catch (error) {
+    return fail(response, error);
+  }
+});
+
+router.get('/map-config', async function (_request, response) {
+  try {
+    return ok(response, await navigation.mapConfig());
+  } catch (error) {
+    return fail(response, error);
+  }
 });
 
 router.post('/sessions', async function (request, response) {

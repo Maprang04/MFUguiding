@@ -20,6 +20,8 @@
     "cleanup:local-security": "node -r dotenv/config scripts/cleanup-local-security-ownership.js",
     "cleanup:audit-retention": "node -r dotenv/config scripts/cleanup-audit-retention.js",
     "seed:e2e-admin": "node -r dotenv/config scripts/seed-e2e-admin.js dotenv_config_path=.env.test",
+    "seed:mobile-users": "cross-env DOTENV_CONFIG_PATH=.env.local node -r dotenv/config scripts/seed-mobile-users.js",
+    "seed:navigation-map": "cross-env DOTENV_CONFIG_PATH=.env.local node -r dotenv/config scripts/seed-navigation-map.js",
     "start": "npm run start:local",
     "start:local": "cross-env DOTENV_CONFIG_PATH=.env.local nodemon -r dotenv/config server.js",
     "start:preprod": "DOTENV_CONFIG_PATH=.env.preprod node -r dotenv/config server.js",

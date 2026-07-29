@@ -22,6 +22,11 @@ Set `POSITIONING_MODE=http` after the Python positioning API is available.
 GET    /api/v1/navigation/health
 GET    /api/v1/navigation/destinations
 GET    /api/v1/navigation/access-points
+GET    /api/v1/navigation/map-config
+GET    /api/v1/navigation/admin/:resource
+POST   /api/v1/navigation/admin/:resource
+PATCH  /api/v1/navigation/admin/:resource/:id
+DELETE /api/v1/navigation/admin/:resource/:id
 POST   /api/v1/navigation/sessions
 GET    /api/v1/navigation/sessions/:sessionId
 PATCH  /api/v1/navigation/sessions/:sessionId/destination
@@ -43,3 +48,28 @@ Simulator endpoints must be disabled in production.
 ```powershell
 npm.cmd run test:navigation
 ```
+
+## MongoDB map catalog
+
+Floor calibration, destinations, access points, and zones are stored in:
+
+- `Navigation_Floors`
+- `Navigation_Destinations`
+- `Navigation_Access_Points`
+- `Navigation_Zones`
+
+Seed local/Atlas data with:
+
+```powershell
+npm.cmd run seed:navigation-map
+```
+
+`GET /api/v1/navigation/map-config` returns the complete catalog snapshot.
+When `POSITIONING_MODE=http`, the backend sends this snapshot to the Python
+positioning service before creating a positioning session. This keeps Flutter,
+Node.js, and Python on the same destination/AP/zone coordinates.
+
+Admin map routes require `Authorization: Bearer <token>` from a mobile-auth
+session whose user has the `admin` role. Supported resources are `floors`,
+`destinations`, `access-points`, and `zones`. DELETE performs a soft delete by
+setting `active` to false.

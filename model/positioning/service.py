@@ -85,6 +85,53 @@ class PositioningService:
             "active_sessions": len(self.sessions),
         }
 
+    def configure(self, snapshot: dict):
+        destinations = {}
+        for item in snapshot.get("destinations", []):
+            position = item.get("position") or {}
+            destinations[item["id"]] = {
+                "label": item["label"],
+                "position": [float(position["x"]), float(position["y"])],
+            }
+
+        ap_zones = {}
+        for item in snapshot.get("access_points", []):
+            anchors = item.get("anchors") or {}
+            ap_zones[item["name"]] = {
+                "zone": item["zone"],
+                "label": item.get("zoneLabel") or item["zone"],
+                "anchors": {
+                    band: [
+                        float(anchors[band]["x"]),
+                        float(anchors[band]["y"]),
+                    ]
+                    for band in ("near", "medium", "edge")
+                },
+            }
+
+        transitions = {
+            key: [[float(point["x"]), float(point["y"])]]
+            for key, point in snapshot.get("transitions", {}).items()
+        }
+        if not destinations or not ap_zones:
+            raise PositioningError(
+                400,
+                "INVALID_CONFIGURATION",
+                "At least one destination and access point are required",
+            )
+
+        with self.lock:
+            self.config["destinations"] = destinations
+            self.config["ap_zones"] = ap_zones
+            self.config["transitions"] = transitions
+            self.estimator = ZoneEstimator(self.config)
+        return {
+            "configured": True,
+            "destinations": len(destinations),
+            "access_points": len(ap_zones),
+            "transitions": len(transitions),
+        }
+
     def create_session(self, session_id: str, client_id: str, destination_id: str):
         if not session_id or not client_id:
             raise PositioningError(400, "INVALID_REQUEST", "session_id and client_id are required")

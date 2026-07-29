@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_theme.dart';
+import 'admin_dashboard.dart';
 import 'fail_screen.dart';
 import 'loading_screen.dart';
+import 'login_screen.dart';
 import 'map_screen.dart';
+import 'session_manager.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,12 +32,59 @@ class MyApp extends StatelessWidget {
       title: 'MFU SmartGuide',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const HomeScreen(),
+      home: const SessionBootstrap(),
       routes: {
         '/loading': (_) => const LoadingScreen(),
+        '/login': (_) => const LoginScreen(),
         '/map': (_) => const MapScreen(),
         '/fail': (_) => const FailScreen(),
       },
+    );
+  }
+}
+
+class SessionBootstrap extends StatefulWidget {
+  const SessionBootstrap({super.key});
+
+  @override
+  State<SessionBootstrap> createState() => _SessionBootstrapState();
+}
+
+class _SessionBootstrapState extends State<SessionBootstrap> {
+  Widget? _destination;
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  Future<void> _restore() async {
+    final result = await SessionManager.restore();
+    if (!mounted) return;
+    setState(() {
+      _destination = result == null
+          ? const HomeScreen()
+          : result.role == 'admin'
+          ? const AdminDashboardPage()
+          : const MapScreen();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _destination ?? const _SessionLoadingScreen();
+  }
+}
+
+class _SessionLoadingScreen extends StatelessWidget {
+  const _SessionLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: AppColors.burgundy,
+      body: Center(child: CircularProgressIndicator(color: Colors.white)),
     );
   }
 }
@@ -117,7 +167,7 @@ class HomeScreen extends StatelessWidget {
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () =>
-                                Navigator.pushNamed(context, '/loading'),
+                                Navigator.pushNamed(context, '/login'),
                             style: ElevatedButton.styleFrom(
                               foregroundColor: AppColors.burgundyDark,
                               backgroundColor: Colors.white,

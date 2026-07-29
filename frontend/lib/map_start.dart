@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mfuguide/map_report.dart';
+import 'package:mfuguide/floor_plan_coordinates.dart';
 import 'package:mfuguide/navigation_api.dart';
 import 'package:mfuguide/user_page_header.dart';
 
@@ -588,23 +589,10 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
         _viewportSize.isEmpty) {
       return null;
     }
-    const imageSize = Size(2048, 1097);
-    final fitted = applyBoxFit(BoxFit.contain, imageSize, _viewportSize);
-    final imageRect = Alignment.center.inscribe(
-      fitted.destination,
-      Offset.zero & _viewportSize,
-    );
-    const pixelsPerMeterX = 81.75973015049297;
-    const pixelsPerMeterY = 91.0665258711722;
-    const pixelOriginX = 83.54800207576601;
-    const pixelOriginY = 1092.7911826821548;
-    final sourceX =
-        pixelsPerMeterX * (current['x'] as num).toDouble() + pixelOriginX;
-    final sourceY =
-        pixelOriginY - pixelsPerMeterY * (current['y'] as num).toDouble();
-    return Offset(
-      imageRect.left + sourceX / imageSize.width * imageRect.width,
-      imageRect.top + sourceY / imageSize.height * imageRect.height,
+    return FloorPlanCoordinates.metersToCanvas(
+      (current['x'] as num).toDouble(),
+      (current['y'] as num).toDouble(),
+      _viewportSize,
     );
   }
 
@@ -699,28 +687,22 @@ class _NavigationRoutePainter extends CustomPainter {
   });
 
   Offset _toCanvas(double xMeters, double yMeters, Rect imageRect) {
-    const imageWidth = 2048.0;
-    const imageHeight = 1097.0;
-    const pixelsPerMeterX = 81.75973015049297;
-    const pixelsPerMeterY = 91.0665258711722;
-    const pixelOriginX = 83.54800207576601;
-    const pixelOriginY = 1092.7911826821548;
-    final sourceX = pixelsPerMeterX * xMeters + pixelOriginX;
-    final sourceY = pixelOriginY - pixelsPerMeterY * yMeters;
+    final sourcePoint = FloorPlanCoordinates.metersToImage(xMeters, yMeters);
     return Offset(
-      imageRect.left + sourceX / imageWidth * imageRect.width,
-      imageRect.top + sourceY / imageHeight * imageRect.height,
+      imageRect.left +
+          sourcePoint.dx /
+              FloorPlanCoordinates.imageSize.width *
+              imageRect.width,
+      imageRect.top +
+          sourcePoint.dy /
+              FloorPlanCoordinates.imageSize.height *
+              imageRect.height,
     );
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    const imageSize = Size(2048, 1097);
-    final fitted = applyBoxFit(BoxFit.contain, imageSize, size);
-    final imageRect = Alignment.center.inscribe(
-      fitted.destination,
-      Offset.zero & size,
-    );
+    final imageRect = FloorPlanCoordinates.containedImageRect(size);
     if (route.isNotEmpty) {
       final path = Path();
       for (var index = 0; index < route.length; index++) {

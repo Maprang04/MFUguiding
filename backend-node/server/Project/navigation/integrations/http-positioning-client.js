@@ -32,6 +32,13 @@ class HttpPositioningClient {
   healthCheck() {
     return this._request({ method: 'get', url: '/health' });
   }
+  configure(snapshot) {
+    return this._request({
+      method: 'put',
+      url: '/configuration',
+      data: snapshot
+    });
+  }
   createSession(input) {
     return this._request({ method: 'post', url: '/sessions', data: input });
   }

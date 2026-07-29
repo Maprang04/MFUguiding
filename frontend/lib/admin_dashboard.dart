@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'admin_notification.dart';
+import 'admin_map_data.dart';
+import 'admin_page_chrome.dart';
 import 'admin_setting.dart';
 
 class AdminDashboardPage extends StatefulWidget {
@@ -22,17 +24,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   // แก้ไขภาษาไทยต่างดาวให้ถูกต้องเรียบร้อยครับ
   String get _pageTitle => _isEnglish ? 'Dashboard' : 'แดชบอร์ด';
-  String get _totalUsersLabel => _isEnglish ? 'Total\nUsers' : 'ผู้ใช้งาน\nทั้งหมด';
-  String get _activeUsersLabel => _isEnglish ? 'Active\nUsers' : 'ผู้ใช้งาน\nขณะนี้';
-  String get _barrierReportLabel => _isEnglish ? 'Barrier\nReport' : 'รายงาน\nสิ่งกีดขวาง';
-  String get _emergencyAlertsLabel => _isEnglish ? 'Emergency\nAlerts' : 'แจ้งเตือน\nฉุกเฉิน';
-  String get _dashboardLabel => _isEnglish ? 'Dashboard' : 'แดชบอร์ด';
-  String get _notificationLabel => _isEnglish ? 'Notification' : 'การแจ้งเตือน';
-  String get _settingLabel => _isEnglish ? 'Setting' : 'การตั้งค่า';
+  String get _totalUsersLabel =>
+      _isEnglish ? 'Total\nUsers' : 'ผู้ใช้งาน\nทั้งหมด';
+  String get _activeUsersLabel =>
+      _isEnglish ? 'Active\nUsers' : 'ผู้ใช้งาน\nขณะนี้';
+  String get _barrierReportLabel =>
+      _isEnglish ? 'Barrier\nReport' : 'รายงาน\nสิ่งกีดขวาง';
+  String get _emergencyAlertsLabel =>
+      _isEnglish ? 'Emergency\nAlerts' : 'แจ้งเตือน\nฉุกเฉิน';
 
   void _toggleLanguage() {
     setState(() {
-      _language = _isEnglish ? DashboardLanguage.thai : DashboardLanguage.english;
+      _language = _isEnglish
+          ? DashboardLanguage.thai
+          : DashboardLanguage.english;
     });
   }
 
@@ -57,9 +62,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       case 2:
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const AdminSettingPage(),
-          ),
+          MaterialPageRoute(builder: (context) => const AdminSettingPage()),
         );
         setState(() {
           _selectedTab = DashboardTab.setting;
@@ -71,9 +74,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   void _navigateToNotificationPage() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AdminNotificationPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const AdminNotificationPage()),
+    );
+  }
+
+  void _navigateToMapData() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AdminMapDataPage()),
     );
   }
 
@@ -83,9 +91,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _DashboardHeader(
+          AdminPageHeader(
             title: _pageTitle,
-            languageCode: _isEnglish ? 'EN' : 'TH',
+            language: _isEnglish ? 'EN' : 'TH',
             onLanguageTap: _toggleLanguage,
           ),
           Expanded(
@@ -113,13 +121,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   DashboardStatCard(
                     title: _barrierReportLabel,
                     count: '6',
-                    backgroundColor: const Color(0xFFF1A864), // สีส้มพาสเทลตรงตามภาพ
+                    backgroundColor: const Color(
+                      0xFFF1A864,
+                    ), // สีส้มพาสเทลตรงตามภาพ
                     onTap: _navigateToNotificationPage,
+                  ),
+                  DashboardStatCard(
+                    title: _isEnglish ? 'Map\nData' : 'ข้อมูล\nแผนที่',
+                    count: '4',
+                    backgroundColor: const Color(0xFF7C3AED),
+                    onTap: _navigateToMapData,
                   ),
                   DashboardStatCard(
                     title: _emergencyAlertsLabel,
                     count: '5',
-                    backgroundColor: const Color(0xFFB8282B), // สีแดงเข้มตรงตามภาพ
+                    backgroundColor: const Color(
+                      0xFFB8282B,
+                    ), // สีแดงเข้มตรงตามภาพ
                     onTap: _navigateToNotificationPage,
                   ),
                 ],
@@ -128,32 +146,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AdminNavigationBar(
         currentIndex: _selectedTab.index,
-        backgroundColor: const Color(0xFF8B0000),
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.white54,
-        type: BottomNavigationBarType.fixed,
+        isEnglish: _isEnglish,
         onTap: _onBottomNavTap,
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.map_outlined),
-            label: _dashboardLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.mail_outline),
-            label: _notificationLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.settings_outlined),
-            label: _settingLabel,
-          ),
-        ],
       ),
     );
   }
 }
 
+// Legacy header retained for reference while the shared chrome is in use.
+// ignore: unused_element
 class _DashboardHeader extends StatelessWidget {
   final String title;
   final String languageCode;
@@ -171,9 +174,7 @@ class _DashboardHeader extends StatelessWidget {
       height: 140,
       decoration: const BoxDecoration(
         color: Color(0xFF8B0000),
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(24),
-        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: SafeArea(

@@ -37,6 +37,37 @@ class PositioningServiceTests(unittest.TestCase):
             self.service.get_session("nav-test")
         self.assertEqual(context.exception.code, "SESSION_NOT_FOUND")
 
+    def test_mongodb_snapshot_can_replace_runtime_catalog(self):
+        self.service.delete_session("nav-test")
+        result = self.service.configure(
+            {
+                "destinations": [
+                    {
+                        "id": "room_db",
+                        "label": "Database room",
+                        "position": {"x": 15, "y": 5},
+                    }
+                ],
+                "access_points": [
+                    {
+                        "name": "AP_DB",
+                        "zone": "DATABASE_ZONE",
+                        "zoneLabel": "Database zone",
+                        "anchors": {
+                            "near": {"x": 15, "y": 5},
+                            "medium": {"x": 14, "y": 4},
+                            "edge": {"x": 13, "y": 3},
+                        },
+                    }
+                ],
+                "transitions": {},
+            }
+        )
+        self.assertTrue(result["configured"])
+        self.service.create_session("nav-db", "phone-db", "room_db")
+        position = self.service.submit_observation("nav-db", "AP_DB", -60)
+        self.assertEqual(position["zone"], "DATABASE_ZONE")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@ import 'package:mfuguide/app_theme.dart';
 import 'package:mfuguide/map_favorite.dart';
 import 'package:mfuguide/map_screen.dart';
 import 'package:mfuguide/user_navigation_bar.dart';
+import 'package:mfuguide/session_manager.dart';
 
 class MapSettingPage extends StatefulWidget {
   final String currentLanguage;
@@ -38,6 +39,32 @@ class _MapSettingPageState extends State<MapSettingPage> {
   }
 
   String t(String en, String th) => _language == 'EN' ? en : th;
+
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t('Sign out', 'ออกจากระบบ')),
+        content: Text(
+          t('Do you want to sign out?', 'คุณต้องการออกจากระบบหรือไม่?'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t('Cancel', 'ยกเลิก')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t('Sign out', 'ออกจากระบบ')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await SessionManager.logout();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -186,6 +213,12 @@ class _MapSettingPageState extends State<MapSettingPage> {
                     icon: Icons.description,
                     label: t('Privacy & Policy', 'นโยบายความเป็นส่วนตัว'),
                     onTap: () {},
+                  ),
+                  const SizedBox(height: 12),
+                  _buildOptionItem(
+                    icon: Icons.logout_rounded,
+                    label: t('Sign out', 'ออกจากระบบ'),
+                    onTap: _logout,
                   ),
                 ],
               ),

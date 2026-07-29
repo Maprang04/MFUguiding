@@ -77,7 +77,6 @@ async function deleteOldLogs() {
 // สร้าง middleware เพื่อดักจับข้อมูล response
 function loggerMiddleware (req, res, next){
     const originalJson = res.json;
-    const originalStatusJson = res.status().json;
 
     // ดักจับการส่ง json ปกติ (res.json())
     res.json = function (body) {
@@ -92,7 +91,7 @@ function loggerMiddleware (req, res, next){
     };
 
     // ดักจับการส่ง json เมื่อมีการกำหนด status (res.status().json())
-    res.status().json = function (body) {
+    /* res.status().json = function (body) {
         res.locals.responseData = body;  // เก็บข้อมูล response ที่ส่งไปให้ client
         // บันทึก log ก่อนที่จะส่งข้อมูลไปยัง client
         if (res.statusCode >= 200 && res.statusCode < 400) {
@@ -101,7 +100,7 @@ function loggerMiddleware (req, res, next){
             logErrorData(req, res, body);
         }
         return originalStatusJson.call(this, body);  // เรียกใช้งาน res.status().json เดิม
-    };
+    }; */
     // ลบ log เก่าทุกๆ 10 วินาทีใน background
     // setTimeout(deleteOldLogs, 10000);
 

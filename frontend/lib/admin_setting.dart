@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'admin_dashboard.dart';
 import 'admin_notification.dart';
+import 'admin_page_chrome.dart';
+import 'session_manager.dart';
 
 enum SettingLanguage { english, thai }
 
@@ -19,16 +21,16 @@ class _AdminSettingPageState extends State<AdminSettingPage> {
 
   // แก้ไขปัญหา Encoding ภาษาไทยให้ถูกต้อง
   String get _profileTitle => _isEnglish ? 'Profile' : 'โปรไฟล์';
-  String get _personalInfoLabel => _isEnglish ? 'Personal Info' : 'ข้อมูลส่วนตัว';
+  String get _personalInfoLabel =>
+      _isEnglish ? 'Personal Info' : 'ข้อมูลส่วนตัว';
   String get _settingLabel => _isEnglish ? 'Setting' : 'ตั้งค่า';
   String get _supportLabel => _isEnglish ? 'Support' : 'สนับสนุน';
-  String get _privacyPolicyLabel => _isEnglish ? 'Privacy & Policy' : 'นโยบายความเป็นส่วนตัว';
+  String get _privacyPolicyLabel =>
+      _isEnglish ? 'Privacy & Policy' : 'นโยบายความเป็นส่วนตัว';
   String get _signOutLabel => _isEnglish ? 'Sign out' : 'ออกจากระบบ';
-  String get _dashboardLabel => _isEnglish ? 'Dashboard' : 'แดชบอร์ด';
-  String get _notificationLabel => _isEnglish ? 'Notification' : 'แจ้งเตือน';
-  String get _settingNavLabel => _isEnglish ? 'Setting' : 'การตั้งค่า';
   String get _logoutDialogTitle => _isEnglish ? 'Sign out' : 'ออกจากระบบ';
-  String get _logoutDialogMessage => _isEnglish ? 'Do you want to sign out?' : 'คุณต้องการออกจากระบบหรือไม่?';
+  String get _logoutDialogMessage =>
+      _isEnglish ? 'Do you want to sign out?' : 'คุณต้องการออกจากระบบหรือไม่?';
   String get _cancelLabel => _isEnglish ? 'Cancel' : 'ยกเลิก';
   String get _confirmLabel => _isEnglish ? 'Confirm' : 'ตกลง';
 
@@ -40,10 +42,7 @@ class _AdminSettingPageState extends State<AdminSettingPage> {
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 
@@ -59,9 +58,13 @@ class _AdminSettingPageState extends State<AdminSettingPage> {
             child: Text(_cancelLabel),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(context).pop();
-              _showSnackBar(_signOutLabel);
+              await SessionManager.logout();
+              if (!mounted) return;
+              Navigator.of(
+                this.context,
+              ).pushNamedAndRemoveUntil('/login', (_) => false);
             },
             child: Text(_confirmLabel),
           ),
@@ -90,9 +93,9 @@ class _AdminSettingPageState extends State<AdminSettingPage> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _ProfileHeader(
+          AdminPageHeader(
             title: _profileTitle,
-            languageCode: _isEnglish ? 'EN' : 'TH',
+            language: _isEnglish ? 'EN' : 'TH',
             onLanguageTap: _toggleLanguage,
           ),
           Expanded(
@@ -143,12 +146,9 @@ class _AdminSettingPageState extends State<AdminSettingPage> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AdminNavigationBar(
         currentIndex: 2,
-        backgroundColor: const Color(0xFF8B0000),
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.white70,
-        type: BottomNavigationBarType.fixed,
+        isEnglish: _isEnglish,
         onTap: (index) {
           if (index == 0) {
             _navigateToDashboard();
@@ -156,25 +156,13 @@ class _AdminSettingPageState extends State<AdminSettingPage> {
             _navigateToNotification();
           }
         },
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.map_outlined),
-            label: _dashboardLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.mail_outline),
-            label: _notificationLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.settings_outlined),
-            label: _settingNavLabel,
-          ),
-        ],
       ),
     );
   }
 }
 
+// Legacy header retained for reference while the shared chrome is in use.
+// ignore: unused_element
 class _ProfileHeader extends StatelessWidget {
   final String title;
   final String languageCode;
@@ -267,10 +255,7 @@ class _ProfileHeader extends StatelessWidget {
                       // อัปเดตรหัสนักศึกษา
                       Text(
                         '6631501127',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.white, fontSize: 14),
                       ),
                       SizedBox(height: 6),
                       // อัปเดตชื่อผู้ใช้
@@ -352,10 +337,7 @@ class _SettingMenuItem extends StatelessWidget {
                   ),
                 ),
               ),
-              const Icon(
-                Icons.chevron_right,
-                color: Color(0xFF9CA3AF),
-              ),
+              const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
             ],
           ),
         ),

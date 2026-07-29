@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'map_favorite.dart';
+import 'floor_plan_coordinates.dart';
 import 'map_save.dart';
 import 'map_setting.dart';
 import 'map_start.dart';
@@ -653,28 +654,7 @@ class _FloorPlanMarkerPainter extends CustomPainter {
     final yMeters = double.tryParse(destination?['y'] ?? '');
     if (xMeters == null || yMeters == null) return;
 
-    const imageWidth = 2048.0;
-    const imageHeight = 1097.0;
-    final fitted = applyBoxFit(
-      BoxFit.contain,
-      const Size(imageWidth, imageHeight),
-      size,
-    );
-    final imageRect = Alignment.center.inscribe(
-      fitted.destination,
-      Offset.zero & size,
-    );
-
-    const pixelsPerMeterX = 81.75973015049297;
-    const pixelsPerMeterY = 91.0665258711722;
-    const pixelOriginX = 83.54800207576601;
-    const pixelOriginY = 1092.7911826821548;
-    final sourceX = pixelsPerMeterX * xMeters + pixelOriginX;
-    final sourceY = pixelOriginY - pixelsPerMeterY * yMeters;
-    final point = Offset(
-      imageRect.left + sourceX / imageWidth * imageRect.width,
-      imageRect.top + sourceY / imageHeight * imageRect.height,
-    );
+    final point = FloorPlanCoordinates.metersToCanvas(xMeters, yMeters, size);
 
     canvas.drawCircle(
       point.translate(0, 4),

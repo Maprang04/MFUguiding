@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const config = require('../config/navigation.config');
 const defaultRepository = require('../repository/navigation.repository');
+const defaultCatalog = require('../repository/map-catalog.repository');
 const createPositioningClient = require('../integrations/positioning-client.factory');
 const defaultEvents = require('../navigation.events');
 
@@ -52,6 +53,8 @@ function publicSession(session) {
 function createNavigationService(dependencies) {
   const deps = dependencies || {};
   const repository = deps.repository || defaultRepository;
+  const catalog = deps.catalog ||
+    (deps.repository ? defaultCatalog.fallback : defaultCatalog);
   const positioning = deps.positioning || createPositioningClient();
   const events = deps.events || defaultEvents;
   const clock = deps.clock || function () { return new Date(); };
@@ -84,7 +87,7 @@ function createNavigationService(dependencies) {
     if (!clientId || !destinationId) {
       throw serviceError(400, 'INVALID_REQUEST', 'client_id and destination_id are required');
     }
-    if (!config.destinations[destinationId]) {
+    if (!await catalog.findDestination(destinationId)) {
       throw serviceError(404, 'DESTINATION_NOT_FOUND', 'Destination does not exist');
     }
     const anonymousUserId = 'anonymous:' + clientId;
@@ -93,6 +96,9 @@ function createNavigationService(dependencies) {
       throw serviceError(409, 'ACTIVE_SESSION_EXISTS', 'An active navigation session already exists');
     }
 
+    if (typeof positioning.configure === 'function') {
+      await positioning.configure(await catalog.snapshot());
+    }
     const sessionId = safeSessionId();
     await positioning.createSession({
       session_id: sessionId,
@@ -143,7 +149,7 @@ function createNavigationService(dependencies) {
     }
 
     const validRssi = Number.isFinite(rssi) && rssi > -95 && rssi < -20;
-    const knownAp = Boolean(config.accessPoints[associatedAp]);
+    const knownAp = await catalog.hasAccessPoint(associatedAp);
     const validationError = !validRssi
       ? 'RSSI must be a number between -95 and -20 dBm'
       : (!knownAp ? 'Unknown access point' : null);
@@ -226,7 +232,7 @@ function createNavigationService(dependencies) {
 
   async function changeDestination(sessionId, destinationId, clientId) {
     const session = await requireOwnedSession(sessionId, clientId, false);
-    if (!config.destinations[destinationId]) {
+    if (!await catalog.findDestination(destinationId)) {
       throw serviceError(404, 'DESTINATION_NOT_FOUND', 'Destination does not exist');
     }
     await positioning.changeDestination(sessionId, destinationId);
@@ -290,8 +296,10 @@ function createNavigationService(dependencies) {
     completeSession,
     listObservations,
     health,
-    destinations: function () { return Object.values(config.destinations); },
-    accessPoints: function () { return Object.values(config.accessPoints); },
+    destinations: function () { return catalog.listDestinations(); },
+    destination: function (id) { return catalog.findDestination(id); },
+    accessPoints: function () { return catalog.listAccessPoints(); },
+    mapConfig: function () { return catalog.snapshot(); },
     _private: { publicSession, requireOwnedSession }
   };
 }
