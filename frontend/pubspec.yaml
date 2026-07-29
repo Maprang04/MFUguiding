@@ -62,6 +62,7 @@ flutter:
   assets:
     - assets/mfu-logo.png
     - assets/welcome-background.png
+    - assets/floorplan_clean.png
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

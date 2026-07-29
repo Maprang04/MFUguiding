@@ -24,24 +24,31 @@ class _MapScreenState extends State<MapScreen> {
       'room': 'Room 1 entrance',
       'building': 'Floor 1',
       'distance': '',
+      'x': '15',
+      'y': '5',
     },
     {
       'id': 'room_2',
       'room': 'Room 2 entrance',
       'building': 'Floor 1',
       'distance': '',
+      'x': '15',
+      'y': '9',
     },
     {
       'id': 'room_3',
       'room': 'Room 3 entrance',
       'building': 'Floor 1',
       'distance': '',
+      'x': '11',
+      'y': '5',
     },
   ];
 
   Map<String, String>? _searchResult;
   List<Map<String, String>> _suggestions = const [];
   bool _searched = false;
+  bool _navigationMode = false;
   String _selectedLanguage = 'EN';
 
   String t(String en, String th) => _selectedLanguage == 'EN' ? en : th;
@@ -63,6 +70,8 @@ class _MapScreenState extends State<MapScreen> {
             'room': destination['label'].toString(),
             'building': destination['floorId']?.toString() ?? 'Floor 1',
             'distance': '',
+            'x': (destination['position'] as Map?)?['x']?.toString() ?? '',
+            'y': (destination['position'] as Map?)?['y']?.toString() ?? '',
           };
         }).toList();
       });
@@ -160,19 +169,14 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _openStartPage() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MapStartPage(
-          currentLanguage: _selectedLanguage,
-          destinationId: _searchResult?['id'] ?? 'room_1',
-          destinationLabel: _searchResult?['room'] ?? 'Room 1 entrance',
-          onLanguageChanged: (language) {
-            setState(() => _selectedLanguage = language);
-          },
-        ),
-      ),
-    );
+    if (_searchResult == null) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _navigationMode = true);
+  }
+
+  void _closeNavigationMode() {
+    if (!mounted) return;
+    setState(() => _navigationMode = false);
   }
 
   @override
@@ -185,6 +189,17 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final result = _searchResult;
+    if (_navigationMode && result != null) {
+      return MapStartPage(
+        currentLanguage: _selectedLanguage,
+        destinationId: result['id'] ?? 'room_1',
+        destinationLabel: result['room'] ?? 'Room 1 entrance',
+        onClose: _closeNavigationMode,
+        onLanguageChanged: (language) {
+          setState(() => _selectedLanguage = language);
+        },
+      );
+    }
     return Scaffold(
       body: Column(
         children: [
@@ -216,13 +231,20 @@ class _MapScreenState extends State<MapScreen> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
               child: Stack(
                 children: [
-                  const Positioned.fill(child: _MapCard()),
-                  if (result != null)
-                    const Positioned(
-                      top: 122,
-                      right: 94,
-                      child: _DestinationMarker(),
-                    ),
+                  Positioned.fill(
+                    child: result == null
+                        ? _MapEmptyCard(
+                            title: t(
+                              'Choose a destination',
+                              'เลือกจุดหมายปลายทาง',
+                            ),
+                            message: t(
+                              'Search for a room to display the indoor map.',
+                              'ค้นหาและเลือกห้องเพื่อแสดงแผนที่ภายในอาคาร',
+                            ),
+                          )
+                        : _MapCard(destination: result),
+                  ),
                   Positioned(
                     left: 20,
                     right: 20,
@@ -498,7 +520,9 @@ class _SearchSuggestions extends StatelessWidget {
 }
 
 class _MapCard extends StatelessWidget {
-  const _MapCard();
+  final Map<String, String>? destination;
+
+  const _MapCard({this.destination});
 
   @override
   Widget build(BuildContext context) {
@@ -517,26 +541,23 @@ class _MapCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          Positioned.fill(child: CustomPaint(painter: _MapGridPainter())),
-          const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.maps_home_work_outlined,
-                  size: 46,
-                  color: Color(0xFFCBC5C6),
-                ),
-                SizedBox(height: 10),
-                Text(
-                  'FLOOR MAP',
-                  style: TextStyle(
-                    color: Color(0xFFB6B0B1),
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
+          Positioned.fill(
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 5,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'assets/floorplan_clean.png',
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
                   ),
-                ),
-              ],
+                  CustomPaint(
+                    painter: _FloorPlanMarkerPainter(destination: destination),
+                  ),
+                ],
+              ),
             ),
           ),
           Positioned(
@@ -558,49 +579,115 @@ class _MapCard extends StatelessWidget {
   }
 }
 
-class _MapGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFF0ECEC)
-      ..strokeWidth = 1;
-    for (double x = 22; x < size.width; x += 28) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 22; y < size.height; y += 28) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
+class _MapEmptyCard extends StatelessWidget {
+  final String title;
+  final String message;
 
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _DestinationMarker extends StatelessWidget {
-  const _DestinationMarker();
+  const _MapEmptyCard({required this.title, required this.message});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 52,
-      height: 52,
-      decoration: const BoxDecoration(
-        color: AppColors.burgundy,
-        shape: BoxShape.circle,
-        boxShadow: [
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
           BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 12,
-            offset: Offset(0, 6),
+            color: Color(0x12000000),
+            blurRadius: 22,
+            offset: Offset(0, 9),
           ),
         ],
       ),
-      child: const Icon(
-        Icons.location_on_rounded,
-        color: Colors.white,
-        size: 28,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(30, 30, 30, 90),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  color: AppColors.redSoft,
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: const Icon(
+                  Icons.search_rounded,
+                  color: AppColors.burgundy,
+                  size: 42,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.ink,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.muted, height: 1.45),
+              ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+}
+
+class _FloorPlanMarkerPainter extends CustomPainter {
+  final Map<String, String>? destination;
+
+  const _FloorPlanMarkerPainter({required this.destination});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final xMeters = double.tryParse(destination?['x'] ?? '');
+    final yMeters = double.tryParse(destination?['y'] ?? '');
+    if (xMeters == null || yMeters == null) return;
+
+    const imageWidth = 2048.0;
+    const imageHeight = 1097.0;
+    final fitted = applyBoxFit(
+      BoxFit.contain,
+      const Size(imageWidth, imageHeight),
+      size,
+    );
+    final imageRect = Alignment.center.inscribe(
+      fitted.destination,
+      Offset.zero & size,
+    );
+
+    const pixelsPerMeterX = 81.75973015049297;
+    const pixelsPerMeterY = 91.0665258711722;
+    const pixelOriginX = 83.54800207576601;
+    const pixelOriginY = 1092.7911826821548;
+    final sourceX = pixelsPerMeterX * xMeters + pixelOriginX;
+    final sourceY = pixelOriginY - pixelsPerMeterY * yMeters;
+    final point = Offset(
+      imageRect.left + sourceX / imageWidth * imageRect.width,
+      imageRect.top + sourceY / imageHeight * imageRect.height,
+    );
+
+    canvas.drawCircle(
+      point.translate(0, 4),
+      9,
+      Paint()..color = const Color(0x33000000),
+    );
+    canvas.drawCircle(point, 8, Paint()..color = AppColors.burgundy);
+    canvas.drawCircle(point, 3, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FloorPlanMarkerPainter oldDelegate) {
+    return oldDelegate.destination != destination;
   }
 }
 

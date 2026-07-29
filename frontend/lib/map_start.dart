@@ -7,6 +7,7 @@ class MapStartPage extends StatefulWidget {
   final String currentLanguage;
   final String destinationId;
   final String destinationLabel;
+  final VoidCallback? onClose;
   final ValueChanged<String>? onLanguageChanged;
 
   const MapStartPage({
@@ -14,6 +15,7 @@ class MapStartPage extends StatefulWidget {
     this.currentLanguage = 'EN',
     this.destinationId = 'room_1',
     this.destinationLabel = 'Room 1 entrance',
+    this.onClose,
     this.onLanguageChanged,
   });
 
@@ -26,6 +28,7 @@ class _MapStartPageState extends State<MapStartPage> {
   final NavigationApi _navigationApi = NavigationApi();
   bool _showObstacleAlert = false;
   bool _isLoading = true;
+  bool _stopping = false;
   String? _error;
   String? _sessionId;
   late final String _clientId;
@@ -66,16 +69,32 @@ class _MapStartPageState extends State<MapStartPage> {
           'Backend did not return a navigation session id.',
         );
       }
-      await _navigationApi.runSimulatorScenario(clientId: _clientId);
-      final current = await _navigationApi.getSession(
-        sessionId: _sessionId!,
-        clientId: _clientId,
-      );
-      if (!mounted) return;
-      setState(() {
-        _session = current;
-        _isLoading = false;
-      });
+      const observations = [
+        ('AP3', -61),
+        ('AP3', -63),
+        ('AP3', -62),
+        ('AP2', -73),
+        ('AP2', -69),
+        ('AP2', -66),
+        ('AP1', -72),
+        ('AP1', -68),
+        ('AP1', -64),
+      ];
+      for (final observation in observations) {
+        if (!mounted || _stopping) return;
+        final result = await _navigationApi.submitSimulatorObservation(
+          clientId: _clientId,
+          associatedAp: observation.$1,
+          rssi: observation.$2,
+        );
+        final current = (result['session'] as Map?)?.cast<String, dynamic>();
+        if (!mounted || current == null) return;
+        setState(() {
+          _session = current;
+          _isLoading = false;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 850));
+      }
     } on NavigationApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -86,6 +105,7 @@ class _MapStartPageState extends State<MapStartPage> {
   }
 
   Future<void> _closeNavigation() async {
+    _stopping = true;
     final sessionId = _sessionId;
     if (sessionId != null) {
       try {
@@ -97,7 +117,13 @@ class _MapStartPageState extends State<MapStartPage> {
         // The screen can still close when a local development service stops.
       }
     }
-    if (mounted) Navigator.pop(context);
+    if (!mounted) return;
+    final onClose = widget.onClose;
+    if (onClose != null) {
+      onClose();
+    } else {
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -193,16 +219,26 @@ class _MapStartPageState extends State<MapStartPage> {
               onTap: _toggleObstacleAlert,
               child: Container(
                 color: Colors.grey.shade100,
-                child: Center(
-                  child: _error == null
-                      ? _buildRouteSummary()
-                      : ElevatedButton.icon(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _FollowNavigationMap(
+                      route: ((_session?['route'] as List?) ?? const [])
+                          .whereType<Map>()
+                          .toList(),
+                      currentPosition: _session?['estimated_position'] as Map?,
+                    ),
+                    if (_error != null)
+                      Center(
+                        child: ElevatedButton.icon(
                           onPressed: _startNavigation,
                           icon: const Icon(Icons.refresh_rounded),
                           label: Text(
                             t('Retry connection', 'ลองเชื่อมต่อใหม่'),
                           ),
                         ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -307,51 +343,6 @@ class _MapStartPageState extends State<MapStartPage> {
                 fontSize: 16,
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRouteSummary() {
-    if (_isLoading) {
-      return const SizedBox.shrink();
-    }
-    final route = (_session?['route'] as List?) ?? const [];
-    final position = _session?['estimated_position'] as Map?;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 28),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x18000000),
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.route_rounded, color: Color(0xFF1976D2), size: 48),
-          const SizedBox(height: 12),
-          Text(
-            widget.destinationLabel,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            position == null
-                ? t('Waiting for controller data', 'กำลังรอข้อมูล Controller')
-                : '${t('Current position', 'ตำแหน่งปัจจุบัน')}: '
-                      '(${position['x']}, ${position['y']})\n'
-                      '${route.length} ${t('route waypoints', 'จุดในเส้นทาง')}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black54, height: 1.5),
           ),
         ],
       ),
@@ -541,5 +532,242 @@ class _MapStartPageState extends State<MapStartPage> {
         ],
       ),
     );
+  }
+}
+
+class _FollowNavigationMap extends StatefulWidget {
+  final List<Map> route;
+  final Map? currentPosition;
+
+  const _FollowNavigationMap({
+    required this.route,
+    required this.currentPosition,
+  });
+
+  @override
+  State<_FollowNavigationMap> createState() => _FollowNavigationMapState();
+}
+
+class _FollowNavigationMapState extends State<_FollowNavigationMap>
+    with SingleTickerProviderStateMixin {
+  final TransformationController _transformController =
+      TransformationController();
+  late final AnimationController _cameraController;
+  Animation<Matrix4>? _cameraAnimation;
+  Size _viewportSize = Size.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _cameraController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 650),
+        )..addListener(() {
+          final animation = _cameraAnimation;
+          if (animation != null) _transformController.value = animation.value;
+        });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _followUser());
+  }
+
+  @override
+  void didUpdateWidget(covariant _FollowNavigationMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final old = oldWidget.currentPosition;
+    final current = widget.currentPosition;
+    if (old?['x'] != current?['x'] || old?['y'] != current?['y']) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _followUser());
+    }
+  }
+
+  Offset? _positionOnCanvas() {
+    final current = widget.currentPosition;
+    if (current == null ||
+        current['x'] is! num ||
+        current['y'] is! num ||
+        _viewportSize.isEmpty) {
+      return null;
+    }
+    const imageSize = Size(2048, 1097);
+    final fitted = applyBoxFit(BoxFit.contain, imageSize, _viewportSize);
+    final imageRect = Alignment.center.inscribe(
+      fitted.destination,
+      Offset.zero & _viewportSize,
+    );
+    const pixelsPerMeterX = 81.75973015049297;
+    const pixelsPerMeterY = 91.0665258711722;
+    const pixelOriginX = 83.54800207576601;
+    const pixelOriginY = 1092.7911826821548;
+    final sourceX =
+        pixelsPerMeterX * (current['x'] as num).toDouble() + pixelOriginX;
+    final sourceY =
+        pixelOriginY - pixelsPerMeterY * (current['y'] as num).toDouble();
+    return Offset(
+      imageRect.left + sourceX / imageSize.width * imageRect.width,
+      imageRect.top + sourceY / imageSize.height * imageRect.height,
+    );
+  }
+
+  void _followUser() {
+    if (!mounted) return;
+    final point = _positionOnCanvas();
+    if (point == null) return;
+    const zoom = 2.8;
+    final target = Matrix4.identity()
+      ..translateByDouble(
+        _viewportSize.width / 2,
+        _viewportSize.height / 2,
+        0,
+        1,
+      )
+      ..scaleByDouble(zoom, zoom, 1, 1)
+      ..translateByDouble(-point.dx, -point.dy, 0, 1);
+    _cameraAnimation =
+        Matrix4Tween(begin: _transformController.value, end: target).animate(
+          CurvedAnimation(
+            parent: _cameraController,
+            curve: Curves.easeInOutCubic,
+          ),
+        );
+    _cameraController.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _cameraController.dispose();
+    _transformController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _viewportSize = constraints.biggest;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                transformationController: _transformController,
+                minScale: 1,
+                maxScale: 5,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.asset(
+                      'assets/floorplan_clean.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                    ),
+                    CustomPaint(
+                      painter: _NavigationRoutePainter(
+                        route: widget.route,
+                        currentPosition: widget.currentPosition,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 120,
+              child: IconButton.filled(
+                tooltip: 'Follow current position',
+                onPressed: _followUser,
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF8B0000),
+                ),
+                icon: const Icon(Icons.my_location_rounded),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _NavigationRoutePainter extends CustomPainter {
+  final List<Map> route;
+  final Map? currentPosition;
+
+  const _NavigationRoutePainter({
+    required this.route,
+    required this.currentPosition,
+  });
+
+  Offset _toCanvas(double xMeters, double yMeters, Rect imageRect) {
+    const imageWidth = 2048.0;
+    const imageHeight = 1097.0;
+    const pixelsPerMeterX = 81.75973015049297;
+    const pixelsPerMeterY = 91.0665258711722;
+    const pixelOriginX = 83.54800207576601;
+    const pixelOriginY = 1092.7911826821548;
+    final sourceX = pixelsPerMeterX * xMeters + pixelOriginX;
+    final sourceY = pixelOriginY - pixelsPerMeterY * yMeters;
+    return Offset(
+      imageRect.left + sourceX / imageWidth * imageRect.width,
+      imageRect.top + sourceY / imageHeight * imageRect.height,
+    );
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const imageSize = Size(2048, 1097);
+    final fitted = applyBoxFit(BoxFit.contain, imageSize, size);
+    final imageRect = Alignment.center.inscribe(
+      fitted.destination,
+      Offset.zero & size,
+    );
+    if (route.isNotEmpty) {
+      final path = Path();
+      for (var index = 0; index < route.length; index++) {
+        final x = (route[index]['x'] as num).toDouble();
+        final y = (route[index]['y'] as num).toDouble();
+        final point = _toCanvas(x, y, imageRect);
+        if (index == 0) {
+          path.moveTo(point.dx, point.dy);
+        } else {
+          path.lineTo(point.dx, point.dy);
+        }
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = const Color(0xFF1976D2)
+          ..strokeWidth = 5
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke,
+      );
+      final destination = route.last;
+      canvas.drawCircle(
+        _toCanvas(
+          (destination['x'] as num).toDouble(),
+          (destination['y'] as num).toDouble(),
+          imageRect,
+        ),
+        7,
+        Paint()..color = Colors.red,
+      );
+    }
+    final current = currentPosition;
+    if (current != null && current['x'] is num && current['y'] is num) {
+      final point = _toCanvas(
+        (current['x'] as num).toDouble(),
+        (current['y'] as num).toDouble(),
+        imageRect,
+      );
+      canvas.drawCircle(point, 8, Paint()..color = Colors.green);
+      canvas.drawCircle(point, 3, Paint()..color = Colors.white);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NavigationRoutePainter oldDelegate) {
+    return oldDelegate.route != route ||
+        oldDelegate.currentPosition != currentPosition;
   }
 }
