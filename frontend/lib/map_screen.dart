@@ -5,6 +5,7 @@ import 'map_favorite.dart';
 import 'map_save.dart';
 import 'map_setting.dart';
 import 'map_start.dart';
+import 'navigation_api.dart';
 import 'user_navigation_bar.dart';
 
 class MapScreen extends StatefulWidget {
@@ -16,16 +17,60 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final _searchController = TextEditingController();
-  final List<Map<String, String>> _locations = const [
-    {'room': 'Room 301', 'building': 'AS Building', 'distance': '400 m'},
-    {'room': 'Room 302', 'building': 'AS Building', 'distance': '350 m'},
+  final NavigationApi _navigationApi = NavigationApi();
+  List<Map<String, String>> _locations = const [
+    {
+      'id': 'room_1',
+      'room': 'Room 1 entrance',
+      'building': 'Floor 1',
+      'distance': '',
+    },
+    {
+      'id': 'room_2',
+      'room': 'Room 2 entrance',
+      'building': 'Floor 1',
+      'distance': '',
+    },
+    {
+      'id': 'room_3',
+      'room': 'Room 3 entrance',
+      'building': 'Floor 1',
+      'distance': '',
+    },
   ];
 
   Map<String, String>? _searchResult;
+  List<Map<String, String>> _suggestions = const [];
   bool _searched = false;
   String _selectedLanguage = 'EN';
 
   String t(String en, String th) => _selectedLanguage == 'EN' ? en : th;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDestinations();
+  }
+
+  Future<void> _loadDestinations() async {
+    try {
+      final destinations = await _navigationApi.destinations();
+      if (!mounted || destinations.isEmpty) return;
+      setState(() {
+        _locations = destinations.map((destination) {
+          return {
+            'id': destination['id'].toString(),
+            'room': destination['label'].toString(),
+            'building': destination['floorId']?.toString() ?? 'Floor 1',
+            'distance': '',
+          };
+        }).toList();
+      });
+    } on NavigationApiException {
+      // Keep the bundled destinations so the search UI remains usable while
+      // the local backend is starting.
+    }
+  }
 
   void _performSearch() {
     final query = _searchController.text.trim().toLowerCase();
@@ -47,7 +92,54 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _searched = true;
       _searchResult = matches.isEmpty ? null : matches.first;
+      _suggestions = const [];
     });
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  void _onSearchChanged(String value) {
+    final query = value.trim().toLowerCase();
+    if (query.isEmpty) {
+      setState(() {
+        _suggestions = const [];
+        _searched = false;
+        _searchResult = null;
+      });
+      return;
+    }
+
+    final normalized = query.replaceAll(RegExp(r'^room\s*'), '');
+    final matches = _locations
+        .where((location) {
+          final room = (location['room'] ?? '').toLowerCase();
+          final building = (location['building'] ?? '').toLowerCase();
+          final id = (location['id'] ?? '').toLowerCase().replaceAll('_', ' ');
+          return room.contains(query) ||
+              room.replaceAll(RegExp(r'^room\s*'), '').contains(normalized) ||
+              building.contains(query) ||
+              id.contains(query);
+        })
+        .take(5)
+        .toList();
+
+    setState(() {
+      _suggestions = matches;
+      _searched = false;
+      _searchResult = null;
+    });
+  }
+
+  void _selectSuggestion(Map<String, String> location) {
+    _searchController.text = location['room'] ?? '';
+    _searchController.selection = TextSelection.collapsed(
+      offset: _searchController.text.length,
+    );
+    setState(() {
+      _searchResult = location;
+      _searched = true;
+      _suggestions = const [];
+    });
+    FocusManager.instance.primaryFocus?.unfocus();
   }
 
   void _openSavePage() {
@@ -73,6 +165,8 @@ class _MapScreenState extends State<MapScreen> {
       MaterialPageRoute(
         builder: (_) => MapStartPage(
           currentLanguage: _selectedLanguage,
+          destinationId: _searchResult?['id'] ?? 'room_1',
+          destinationLabel: _searchResult?['room'] ?? 'Room 1 entrance',
           onLanguageChanged: (language) {
             setState(() => _selectedLanguage = language);
           },
@@ -84,6 +178,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _navigationApi.close();
     super.dispose();
   }
 
@@ -102,7 +197,19 @@ class _MapScreenState extends State<MapScreen> {
                 _selectedLanguage = _selectedLanguage == 'EN' ? 'TH' : 'EN';
               });
             },
+            onChanged: _onSearchChanged,
             onSearch: _performSearch,
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: _suggestions.isEmpty
+                ? const SizedBox.shrink()
+                : _SearchSuggestions(
+                    key: ValueKey(_searchController.text),
+                    items: _suggestions,
+                    onSelected: _selectSuggestion,
+                    floorLabel: t('Floor', 'ชั้น'),
+                  ),
           ),
           Expanded(
             child: Padding(
@@ -186,6 +293,7 @@ class _Header extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final VoidCallback onLanguageTap;
+  final ValueChanged<String> onChanged;
   final VoidCallback onSearch;
 
   const _Header({
@@ -193,6 +301,7 @@ class _Header extends StatelessWidget {
     required this.controller,
     required this.hint,
     required this.onLanguageTap,
+    required this.onChanged,
     required this.onSearch,
   });
 
@@ -275,6 +384,7 @@ class _Header extends StatelessWidget {
           TextField(
             controller: controller,
             textInputAction: TextInputAction.search,
+            onChanged: onChanged,
             onSubmitted: (_) => onSearch(),
             decoration: InputDecoration(
               hintText: hint,
@@ -286,6 +396,101 @@ class _Header extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchSuggestions extends StatelessWidget {
+  final List<Map<String, String>> items;
+  final ValueChanged<Map<String, String>> onSelected;
+  final String floorLabel;
+
+  const _SearchSuggestions({
+    super.key,
+    required this.items,
+    required this.onSelected,
+    required this.floorLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE9DFE0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x16000000),
+            blurRadius: 18,
+            offset: Offset(0, 7),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var index = 0; index < items.length; index++) ...[
+            InkWell(
+              onTap: () => onSelected(items[index]),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.redSoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.meeting_room_outlined,
+                        color: AppColors.burgundy,
+                        size: 21,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            items[index]['room'] ?? '',
+                            style: const TextStyle(
+                              color: AppColors.ink,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$floorLabel ${items[index]['building'] ?? ''}',
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.north_west_rounded,
+                      color: AppColors.muted,
+                      size: 19,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (index < items.length - 1) const Divider(height: 1, indent: 68),
+          ],
         ],
       ),
     );

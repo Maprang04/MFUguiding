@@ -11,7 +11,7 @@ const logger = winston.createLogger({
     ),
     transports: [
         new winston.transports.MongoDB({
-            db: process.env.LOG_MONGODB || process.env.MONGODB || 'mongodb://localhost:27017/logs',  // URL ของ MongoDB
+            db: process.env.LOG_MONGODB || process.env.MONGODB_ATLAS || process.env.MONGODB || 'mongodb://localhost:27017/logs',  // URL ของ MongoDB
             collection: 'logs',  // ชื่อ collection ที่จะเก็บ log
             level: 'info',  // กำหนดระดับ log ที่จะบันทึก (สามารถปรับให้เหมาะสมได้)
             storeHost: true,  // เก็บ hostname

@@ -1,14 +1,19 @@
-
 import 'package:flutter/material.dart';
 import 'package:mfuguide/map_report.dart';
+import 'package:mfuguide/navigation_api.dart';
+import 'package:mfuguide/user_page_header.dart';
 
 class MapStartPage extends StatefulWidget {
   final String currentLanguage;
+  final String destinationId;
+  final String destinationLabel;
   final ValueChanged<String>? onLanguageChanged;
 
   const MapStartPage({
     super.key,
     this.currentLanguage = 'EN',
+    this.destinationId = 'room_1',
+    this.destinationLabel = 'Room 1 entrance',
     this.onLanguageChanged,
   });
 
@@ -18,11 +23,88 @@ class MapStartPage extends StatefulWidget {
 
 class _MapStartPageState extends State<MapStartPage> {
   final Color _burgundy = const Color(0xFF8B0000);
+  final NavigationApi _navigationApi = NavigationApi();
   bool _showObstacleAlert = false;
+  bool _isLoading = true;
+  String? _error;
+  String? _sessionId;
+  late final String _clientId;
+  Map<String, dynamic>? _session;
 
-  String get _language => widget.currentLanguage;
+  late String _language;
 
   String t(String en, String th) => _language == 'EN' ? en : th;
+
+  @override
+  void initState() {
+    super.initState();
+    _language = widget.currentLanguage;
+    _clientId = 'mfu-flutter-${DateTime.now().microsecondsSinceEpoch}';
+    _startNavigation();
+  }
+
+  void _toggleLanguage() {
+    setState(() => _language = _language == 'EN' ? 'TH' : 'EN');
+    widget.onLanguageChanged?.call(_language);
+  }
+
+  Future<void> _startNavigation() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      if (_sessionId == null) {
+        final created = await _navigationApi.createSession(
+          clientId: _clientId,
+          destinationId: widget.destinationId,
+        );
+        _sessionId = created['session_id']?.toString();
+      }
+      if (_sessionId == null) {
+        throw const NavigationApiException(
+          'Backend did not return a navigation session id.',
+        );
+      }
+      await _navigationApi.runSimulatorScenario(clientId: _clientId);
+      final current = await _navigationApi.getSession(
+        sessionId: _sessionId!,
+        clientId: _clientId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _session = current;
+        _isLoading = false;
+      });
+    } on NavigationApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _closeNavigation() async {
+    final sessionId = _sessionId;
+    if (sessionId != null) {
+      try {
+        await _navigationApi.finishSession(
+          sessionId: sessionId,
+          clientId: _clientId,
+        );
+      } on NavigationApiException {
+        // The screen can still close when a local development service stops.
+      }
+    }
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  void dispose() {
+    _navigationApi.close();
+    super.dispose();
+  }
 
   void _openReportPage() {
     Navigator.push(
@@ -43,7 +125,10 @@ class _MapStartPageState extends State<MapStartPage> {
         return AlertDialog(
           title: Text(t('Emergency', 'ฉุกเฉิน')),
           content: Text(
-            t('Call emergency services now?', 'โทรหาบริการฉุกเฉินตอนนี้หรือไม่?'),
+            t(
+              'Call emergency services now?',
+              'โทรหาบริการฉุกเฉินตอนนี้หรือไม่?',
+            ),
           ),
           actions: [
             TextButton(
@@ -51,17 +136,17 @@ class _MapStartPageState extends State<MapStartPage> {
               child: Text(t('Cancel', 'ยกเลิก')),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(t(
-                      'Calling emergency number...',
-                      'กำลังโทรหมายเลขฉุกเฉิน...',
-                    )),
+                    content: Text(
+                      t(
+                        'Calling emergency number...',
+                        'กำลังโทรหมายเลขฉุกเฉิน...',
+                      ),
+                    ),
                   ),
                 );
               },
@@ -85,10 +170,7 @@ class _MapStartPageState extends State<MapStartPage> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(t(
-          'Assistance is on the way.',
-          'กำลังขอความช่วยเหลือ',
-        )),
+        content: Text(t('Assistance is on the way.', 'กำลังขอความช่วยเหลือ')),
         backgroundColor: _burgundy,
       ),
     );
@@ -111,28 +193,41 @@ class _MapStartPageState extends State<MapStartPage> {
               onTap: _toggleObstacleAlert,
               child: Container(
                 color: Colors.grey.shade100,
-                child: const Center(
-                  child: Text(
-                    'MAP PLAN',
-                    style: TextStyle(
-                      color: Colors.black26,
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                child: Center(
+                  child: _error == null
+                      ? _buildRouteSummary()
+                      : ElevatedButton.icon(
+                          onPressed: _startNavigation,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text(
+                            t('Retry connection', 'ลองเชื่อมต่อใหม่'),
+                          ),
+                        ),
                 ),
               ),
             ),
           ),
           Positioned(
-            top: 32,
+            top: 0,
+            left: 0,
+            right: 0,
+            child: UserPageHeader(
+              title: t('Navigation', 'กำลังนำทาง'),
+              subtitle: widget.destinationLabel,
+              language: _language,
+              onBack: _closeNavigation,
+              onLanguageTap: _toggleLanguage,
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 96,
             left: 0,
             right: 0,
             child: Center(child: _buildGuideCard()),
           ),
           Positioned(
             left: 16,
-            top: 120,
+            top: MediaQuery.paddingOf(context).top + 178,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -155,18 +250,19 @@ class _MapStartPageState extends State<MapStartPage> {
             ),
           ),
           if (_showObstacleAlert) _buildObstacleAlert(),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _buildBottomBar(),
-          ),
+          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomBar()),
         ],
       ),
     );
   }
 
   Widget _buildGuideCard() {
+    final zone = _session?['zone_label']?.toString();
+    final guideText = _isLoading
+        ? t('Connecting navigation...', 'กำลังเชื่อมต่อระบบนำทาง...')
+        : _error != null
+        ? t('Backend connection failed', 'เชื่อมต่อ Backend ไม่สำเร็จ')
+        : zone ?? t('Keep Straight on', 'เดินตรงไป');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
       decoration: BoxDecoration(
@@ -174,7 +270,7 @@ class _MapStartPageState extends State<MapStartPage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.18),
+            color: Colors.black.withValues(alpha: 0.18),
             blurRadius: 12,
           ),
         ],
@@ -189,19 +285,73 @@ class _MapStartPageState extends State<MapStartPage> {
               color: Colors.white,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              Icons.arrow_upward,
-              color: _burgundy,
-            ),
+            child: _isLoading
+                ? Padding(
+                    padding: const EdgeInsets.all(11),
+                    child: CircularProgressIndicator(
+                      color: _burgundy,
+                      strokeWidth: 3,
+                    ),
+                  )
+                : Icon(Icons.arrow_upward, color: _burgundy),
           ),
           const SizedBox(width: 14),
-          Text(
-            t('Keep Straight on', 'เดินตรงไป'),
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+          Flexible(
+            child: Text(
+              guideText,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRouteSummary() {
+    if (_isLoading) {
+      return const SizedBox.shrink();
+    }
+    final route = (_session?['route'] as List?) ?? const [];
+    final position = _session?['estimated_position'] as Map?;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 28),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x18000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.route_rounded, color: Color(0xFF1976D2), size: 48),
+          const SizedBox(height: 12),
+          Text(
+            widget.destinationLabel,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            position == null
+                ? t('Waiting for controller data', 'กำลังรอข้อมูล Controller')
+                : '${t('Current position', 'ตำแหน่งปัจจุบัน')}: '
+                      '(${position['x']}, ${position['y']})\n'
+                      '${route.length} ${t('route waypoints', 'จุดในเส้นทาง')}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.black54, height: 1.5),
           ),
         ],
       ),
@@ -227,7 +377,7 @@ class _MapStartPageState extends State<MapStartPage> {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.14),
+                  color: Colors.black.withValues(alpha: 0.14),
                   blurRadius: 10,
                 ),
               ],
@@ -258,7 +408,7 @@ class _MapStartPageState extends State<MapStartPage> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 18,
             ),
           ],
@@ -283,15 +433,9 @@ class _MapStartPageState extends State<MapStartPage> {
             ),
             const SizedBox(height: 10),
             Text(
-              t(
-                'Would you like assistance?',
-                'ต้องการขอความช่วยเหลือหรือไม่?',
-              ),
+              t('Would you like assistance?', 'ต้องการขอความช่วยเหลือหรือไม่?'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-              ),
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
             ),
             const SizedBox(height: 22),
             Row(
@@ -344,10 +488,23 @@ class _MapStartPageState extends State<MapStartPage> {
   }
 
   Widget _buildBottomBar() {
+    final route = (_session?['route'] as List?) ?? const [];
+    final position = _session?['estimated_position'] as Map?;
+    final positionText = position == null
+        ? t('Waiting for position', 'กำลังรอตำแหน่ง')
+        : '(${position['x']}, ${position['y']}) • ${route.length} waypoints';
     return Container(
       width: double.infinity,
-      color: _burgundy,
-      padding: const EdgeInsets.fromLTRB(24, 16, 16, 24),
+      decoration: BoxDecoration(
+        color: _burgundy,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        16,
+        MediaQuery.paddingOf(context).bottom + 16,
+      ),
       child: Row(
         children: [
           Expanded(
@@ -355,7 +512,7 @@ class _MapStartPageState extends State<MapStartPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  t('3 min', '3 นาที'),
+                  widget.destinationLabel,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
@@ -364,27 +521,21 @@ class _MapStartPageState extends State<MapStartPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '0.06 m   16.39',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                  ),
+                  positionText,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ],
             ),
           ),
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: _closeNavigation,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFF2E2E2E),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(
-                Icons.close,
-                color: Colors.white,
-              ),
+              child: const Icon(Icons.close, color: Colors.white),
             ),
           ),
         ],

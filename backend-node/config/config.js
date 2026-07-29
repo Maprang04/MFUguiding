@@ -172,7 +172,8 @@ module.exports = {
         baseUrl: projectBaseUrl
     },
     key:process.env.KEY,
-    mongoURI: process.env.MONGODB,
+    // Prefer the local Atlas override while preserving existing environments.
+    mongoURI: process.env.MONGODB_ATLAS || process.env.MONGODB,
     // mongoURI: 'mongodb+srv://'+process.env.MONGO_USER+':'+process.env.MONGO_PASS+'@'+process.env.MONGO_HOST+'/'+process.env.MONGO_NAME+'?authSource=admin',
     timeout: process.env.TIMEOUT,
     tokenLength: process.env.TOKENLANGTH,
