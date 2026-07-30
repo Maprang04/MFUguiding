@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mfuguide/app_theme.dart';
+import 'package:mfuguide/app_session.dart';
 import 'package:mfuguide/map_favorite.dart';
+import 'package:mfuguide/map_report.dart';
 import 'package:mfuguide/map_screen.dart';
 import 'package:mfuguide/user_navigation_bar.dart';
 import 'package:mfuguide/session_manager.dart';
@@ -157,18 +159,23 @@ class _MapSettingPageState extends State<MapSettingPage> {
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                         ),
-                        child: const Center(
-                          child: Icon(
-                            Icons.school,
-                            size: 36,
-                            color: Color(0xFF8B0000),
+                        child: Center(
+                          child: Text(
+                            (AppSession.email?.isNotEmpty ?? false)
+                                ? AppSession.email![0].toUpperCase()
+                                : 'U',
+                            style: const TextStyle(
+                              color: Color(0xFF8B0000),
+                              fontSize: 27,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          'Mae Fah Luang\nUniversity',
+                          AppSession.email ?? t('User', 'ผู้ใช้งาน'),
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -198,21 +205,15 @@ class _MapSettingPageState extends State<MapSettingPage> {
                 children: [
                   const SizedBox(height: 16),
                   _buildOptionItem(
-                    icon: Icons.settings,
-                    label: t('Setting', 'ตั้งค่า'),
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: 12),
-                  _buildOptionItem(
-                    icon: Icons.headset_mic,
-                    label: t('Support', 'ความช่วยเหลือ'),
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: 12),
-                  _buildOptionItem(
-                    icon: Icons.description,
-                    label: t('Privacy & Policy', 'นโยบายความเป็นส่วนตัว'),
-                    onTap: () {},
+                    icon: Icons.report_problem_outlined,
+                    label: t('Report a problem', 'รายงานปัญหา'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            MapReportPage(currentLanguage: _language),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   _buildOptionItem(

@@ -63,7 +63,8 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
 
   // แก้ไขข้อความต่างดาวเป็นภาษาไทยที่ถูกต้อง
   String get _title => _isEnglish ? 'Notification' : 'การแจ้งเตือน';
-  String get _barrierTab => _isEnglish ? 'Barrier Report' : 'รายงานสิ่งกีดขวาง';
+  String get _barrierTab =>
+      _isEnglish ? 'App Issue Reports' : 'รายงานปัญหาแอป';
   String get _emergencyTab =>
       _isEnglish ? 'Emergency Alerts' : 'แจ้งเตือนฉุกเฉิน';
   String get _approvedLabel =>

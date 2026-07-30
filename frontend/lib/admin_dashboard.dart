@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
-import 'admin_notification.dart';
+import 'admin_map_api.dart';
 import 'admin_map_data.dart';
+import 'admin_notification.dart';
 import 'admin_page_chrome.dart';
 import 'admin_setting.dart';
+import 'app_session.dart';
+import 'app_theme.dart';
+import 'mobile_content_api.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -12,133 +16,189 @@ class AdminDashboardPage extends StatefulWidget {
   State<AdminDashboardPage> createState() => _AdminDashboardPageState();
 }
 
-enum DashboardLanguage { english, thai }
-
-enum DashboardTab { dashboard, notification, setting }
-
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
-  DashboardLanguage _language = DashboardLanguage.english;
-  DashboardTab _selectedTab = DashboardTab.dashboard;
+  final _mapApi = AdminMapApi();
+  final _contentApi = MobileContentApi();
+  bool _isEnglish = true;
+  bool _loading = true;
+  String? _error;
+  int _rooms = 0, _accessPoints = 0, _zones = 0, _openReportCount = 0;
 
-  bool get _isEnglish => _language == DashboardLanguage.english;
+  String t(String en, String th) => _isEnglish ? en : th;
 
-  // แก้ไขภาษาไทยต่างดาวให้ถูกต้องเรียบร้อยครับ
-  String get _pageTitle => _isEnglish ? 'Dashboard' : 'แดชบอร์ด';
-  String get _totalUsersLabel =>
-      _isEnglish ? 'Total\nUsers' : 'ผู้ใช้งาน\nทั้งหมด';
-  String get _activeUsersLabel =>
-      _isEnglish ? 'Active\nUsers' : 'ผู้ใช้งาน\nขณะนี้';
-  String get _barrierReportLabel =>
-      _isEnglish ? 'Barrier\nReport' : 'รายงาน\nสิ่งกีดขวาง';
-  String get _emergencyAlertsLabel =>
-      _isEnglish ? 'Emergency\nAlerts' : 'แจ้งเตือน\nฉุกเฉิน';
-
-  void _toggleLanguage() {
-    setState(() {
-      _language = _isEnglish
-          ? DashboardLanguage.thai
-          : DashboardLanguage.english;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _loadSummary();
   }
 
-  void _onBottomNavTap(int index) {
-    switch (index) {
-      case 0:
-        setState(() {
-          _selectedTab = DashboardTab.dashboard;
-        });
-        break;
-      case 1:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const AdminNotificationPage(),
-          ),
-        );
-        setState(() {
-          _selectedTab = DashboardTab.notification;
-        });
-        break;
-      case 2:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const AdminSettingPage()),
-        );
-        setState(() {
-          _selectedTab = DashboardTab.setting;
-        });
-        break;
+  Future<void> _loadSummary() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final results = await Future.wait([
+        _mapApi.list('destinations'),
+        _mapApi.list('access-points'),
+        _mapApi.list('zones'),
+        _contentApi.adminReports(),
+      ]);
+      final reports = results[3];
+      if (!mounted) return;
+      setState(() {
+        _rooms = results[0].length;
+        _accessPoints = results[1].length;
+        _zones = results[2].length;
+        _openReportCount = reports.where((item) {
+          final status = item['status']?.toString().toLowerCase();
+          return status != 'resolved' && status != 'rejected';
+        }).length;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _navigateToNotificationPage() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const AdminNotificationPage()),
-    );
-  }
+  void _openMapData() => Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const AdminMapDataPage()),
+  );
 
-  void _navigateToMapData() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AdminMapDataPage()),
-    );
+  void _openReports() => Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const AdminNotificationPage()),
+  );
+
+  @override
+  void dispose() {
+    _mapApi.close();
+    _contentApi.close();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.canvas,
       body: Column(
         children: [
           AdminPageHeader(
-            title: _pageTitle,
+            title: t('Dashboard', 'แดชบอร์ด'),
             language: _isEnglish ? 'EN' : 'TH',
-            onLanguageTap: _toggleLanguage,
+            onLanguageTap: () => setState(() => _isEnglish = !_isEnglish),
           ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: GridView.count(
-                physics: const BouncingScrollPhysics(),
-                crossAxisCount: 2,
-                mainAxisSpacing: 20,
-                crossAxisSpacing: 20,
-                childAspectRatio: 0.95,
+            child: RefreshIndicator(
+              onRefresh: _loadSummary,
+              color: AppColors.burgundy,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
                 children: [
-                  DashboardStatCard(
-                    title: _totalUsersLabel,
-                    count: '7',
-                    backgroundColor: const Color(0xFF3B82F6), // สีฟ้า
-                    onTap: () {},
+                  // const SizedBox(height: 4),
+                  // Text(
+                  //   AppSession.email ?? 'Administrator',
+                  //   style: Theme.of(context).textTheme.bodyMedium,
+                  // ),
+                  const SizedBox(height: 10),
+                  if (_loading)
+                    const LinearProgressIndicator(
+                      color: AppColors.burgundy,
+                      backgroundColor: AppColors.redSoft,
+                    ),
+                  if (_error != null) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.redSoft,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.info_outline,
+                            color: AppColors.burgundy,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              t(
+                                'Some data could not be loaded.',
+                                'ไม่สามารถโหลดข้อมูลบางส่วนได้',
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: _loadSummary,
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1.18,
+                    children: [
+                      _SummaryCard(
+                        label: t('Rooms', 'ห้อง'),
+                        value: _rooms,
+                        icon: Icons.meeting_room_outlined,
+                        color: AppColors.burgundy,
+                      ),
+                      _SummaryCard(
+                        label: t('Access points', 'จุดกระจายสัญญาณ'),
+                        value: _accessPoints,
+                        icon: Icons.wifi_rounded,
+                        color: const Color(0xFF2563EB),
+                      ),
+                      _SummaryCard(
+                        label: t('Navigation zones', 'โซนนำทาง'),
+                        value: _zones,
+                        icon: Icons.grid_view_rounded,
+                        color: const Color(0xFF7C3AED),
+                      ),
+                      _SummaryCard(
+                        label: t('Open reports', 'รายงานที่รอดำเนินการ'),
+                        value: _openReportCount,
+                        icon: Icons.report_problem_outlined,
+                        color: const Color(0xFFD97706),
+                        onTap: _openReports,
+                      ),
+                    ],
                   ),
-                  DashboardStatCard(
-                    title: _activeUsersLabel,
-                    count: '7',
-                    backgroundColor: const Color(0xFF34D399), // สีเขียว
-                    onTap: () {},
+                  const SizedBox(height: 22),
+                  Text(
+                    t('Quick actions', 'เมนูด่วน'),
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  DashboardStatCard(
-                    title: _barrierReportLabel,
-                    count: '6',
-                    backgroundColor: const Color(
-                      0xFFF1A864,
-                    ), // สีส้มพาสเทลตรงตามภาพ
-                    onTap: _navigateToNotificationPage,
+                  const SizedBox(height: 12),
+                  _ActionTile(
+                    icon: Icons.map_outlined,
+                    title: t('Manage map data', 'จัดการข้อมูลแผนที่'),
+                    subtitle: t(
+                      'Rooms, access points, zones and floors',
+                      'ห้อง จุดกระจายสัญญาณ โซน และชั้น',
+                    ),
+                    onTap: _openMapData,
                   ),
-                  DashboardStatCard(
-                    title: _isEnglish ? 'Map\nData' : 'ข้อมูล\nแผนที่',
-                    count: '4',
-                    backgroundColor: const Color(0xFF7C3AED),
-                    onTap: _navigateToMapData,
-                  ),
-                  DashboardStatCard(
-                    title: _emergencyAlertsLabel,
-                    count: '5',
-                    backgroundColor: const Color(
-                      0xFFB8282B,
-                    ), // สีแดงเข้มตรงตามภาพ
-                    onTap: _navigateToNotificationPage,
+                  const SizedBox(height: 10),
+                  _ActionTile(
+                    icon: Icons.notifications_active_outlined,
+                    title: t('Review user reports', 'ตรวจสอบรายงานจากผู้ใช้'),
+                    subtitle: t(
+                      'Review issues and update their status',
+                      'ตรวจสอบปัญหาและอัปเดตสถานะ',
+                    ),
+                    onTap: _openReports,
                   ),
                 ],
               ),
@@ -147,131 +207,112 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         ],
       ),
       bottomNavigationBar: AdminNavigationBar(
-        currentIndex: _selectedTab.index,
+        currentIndex: 0,
         isEnglish: _isEnglish,
-        onTap: _onBottomNavTap,
+        onTap: (index) {
+          if (index == 1) _openReports();
+          if (index == 2) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminSettingPage()),
+            );
+          }
+        },
       ),
     );
   }
 }
 
-// Legacy header retained for reference while the shared chrome is in use.
-// ignore: unused_element
-class _DashboardHeader extends StatelessWidget {
-  final String title;
-  final String languageCode;
-  final VoidCallback onLanguageTap;
+class _SummaryCard extends StatelessWidget {
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
 
-  const _DashboardHeader({
-    required this.title,
-    required this.languageCode,
-    required this.onLanguageTap,
+  const _SummaryCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 140,
-      decoration: const BoxDecoration(
-        color: Color(0xFF8B0000),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(20),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const Spacer(),
             Text(
-              title,
+              '$value',
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                color: AppColors.ink,
               ),
             ),
-            GestureDetector(
-              onTap: onLanguageTap,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  languageCode,
-                  style: const TextStyle(
-                    color: Color(0xFF8B0000),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.muted, fontSize: 13),
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-class DashboardStatCard extends StatelessWidget {
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
   final String title;
-  final String count;
-  final Color backgroundColor;
+  final String subtitle;
   final VoidCallback onTap;
 
-  const DashboardStatCard({
-    super.key,
+  const _ActionTile({
+    required this.icon,
     required this.title,
-    required this.count,
-    required this.backgroundColor,
+    required this.subtitle,
     required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                count,
-                style: const TextStyle(
-                  color: Colors.black87,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(18),
+    child: ListTile(
+      onTap: onTap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppColors.redSoft,
+          borderRadius: BorderRadius.circular(14),
         ),
+        child: Icon(icon, color: AppColors.burgundy),
       ),
-    );
-  }
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right_rounded),
+    ),
+  );
 }

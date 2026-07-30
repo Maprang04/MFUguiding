@@ -134,8 +134,8 @@ class _MapReportPageState extends State<MapReportPage> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       t(
-                        'Fill in the details below.',
-                        'กรุณากรอกข้อมูลด้านล่าง',
+                        'Tell us what went wrong in the application.',
+                        'แจ้งปัญหาที่พบในการใช้งานแอปพลิเคชัน',
                       ),
                       style: const TextStyle(
                         color: Colors.black87,
@@ -157,17 +157,20 @@ class _MapReportPageState extends State<MapReportPage> {
                     child: Column(
                       children: [
                         _buildInputField(
-                          label: t('Barrier Type', 'ประเภทสิ่งกีดขวาง'),
+                          label: t('Issue type', 'ประเภทปัญหา'),
                           hint: t(
-                            'Enter barrier type',
-                            'ระบุประเภทสิ่งกีดขวาง',
+                            'For example: map, login or navigation',
+                            'เช่น แผนที่ เข้าสู่ระบบ หรือการนำทาง',
                           ),
                           controller: _typeController,
                         ),
                         const SizedBox(height: 14),
                         _buildInputField(
-                          label: t('Location', 'ตำแหน่ง'),
-                          hint: t('Enter location', 'ระบุตำแหน่ง'),
+                          label: t('Screen or feature', 'หน้าหรือฟังก์ชัน'),
+                          hint: t(
+                            'Where did the problem occur?',
+                            'พบปัญหาที่หน้าหรือฟังก์ชันใด',
+                          ),
                           controller: _locationController,
                         ),
                         const SizedBox(height: 14),
@@ -261,10 +264,10 @@ class _MapReportPageState extends State<MapReportPage> {
 
   Widget _buildHeader() {
     return UserPageHeader(
-      title: t('Report Barrier', 'รายงานสิ่งกีดขวาง'),
+      title: t('Report an App Issue', 'รายงานปัญหาแอป'),
       subtitle: t(
-        'Help keep routes accessible',
-        'ช่วยให้เส้นทางใช้งานได้สะดวก',
+        'Help us improve MFU SmartGuide',
+        'ช่วยเราปรับปรุง MFU SmartGuide',
       ),
       language: _language,
       onBack: () => Navigator.pop(context),
