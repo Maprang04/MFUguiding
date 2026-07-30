@@ -5,7 +5,6 @@ import 'admin_map_data.dart';
 import 'admin_notification.dart';
 import 'admin_page_chrome.dart';
 import 'admin_setting.dart';
-import 'app_session.dart';
 import 'app_theme.dart';
 import 'mobile_content_api.dart';
 
@@ -98,11 +97,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
                 children: [
-                  // const SizedBox(height: 4),
-                  // Text(
-                  //   AppSession.email ?? 'Administrator',
-                  //   style: Theme.of(context).textTheme.bodyMedium,
-                  // ),
                   const SizedBox(height: 10),
                   if (_loading)
                     const LinearProgressIndicator(
