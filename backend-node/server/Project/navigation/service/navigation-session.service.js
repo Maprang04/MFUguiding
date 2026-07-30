@@ -139,6 +139,7 @@ function createNavigationService(dependencies) {
     const associatedAp = cleanText(input && input.associated_ap);
     const rssi = Number(input && input.rssi);
     const timestamp = input && input.timestamp ? new Date(input.timestamp) : clock();
+    const externalObservationId = cleanText(input && input.observation_id);
     if (!clientId || !associatedAp || Number.isNaN(timestamp.getTime())) {
       throw serviceError(400, 'INVALID_REQUEST', 'client_id, associated_ap and a valid timestamp are required');
     }
@@ -154,7 +155,7 @@ function createNavigationService(dependencies) {
       ? 'RSSI must be a number between -95 and -20 dBm'
       : (!knownAp ? 'Unknown access point' : null);
 
-    await repository.createObservation({
+    const observationRecord = {
       sessionId: session.sessionId,
       clientId,
       associatedAp,
@@ -164,7 +165,11 @@ function createNavigationService(dependencies) {
       source: cleanText(input.source) || 'simulator',
       valid: !validationError,
       validationError
-    });
+    };
+    if (externalObservationId) {
+      observationRecord.externalObservationId = externalObservationId;
+    }
+    await repository.createObservation(observationRecord);
     if (validationError) {
       throw serviceError(
         400,
@@ -271,8 +276,8 @@ function createNavigationService(dependencies) {
       backend: 'ok',
       mongodb: 'ok',
       positioning_engine: 'ok',
-      observation_source: config.simulatorEnabled ? 'simulator' : 'controller',
-      cisco_controller: 'not_configured'
+      observation_source: config.observationSource,
+      cisco_controller: config.controllerApiKey ? 'ingestion_ready' : 'not_configured'
     };
     try {
       await repository.healthCheck();

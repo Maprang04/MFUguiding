@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const database = require('../../../database/indoor-navigation.connection');
 const Schema = mongoose.Schema;
 
 const transformSchema = new Schema({
@@ -26,5 +27,5 @@ const floorSchema = new Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { collection: 'Navigation_Floors' });
 
-module.exports = mongoose.models.NavigationFloor ||
-  mongoose.model('NavigationFloor', floorSchema);
+module.exports = database.models.NavigationFloor ||
+  database.model('NavigationFloor', floorSchema);

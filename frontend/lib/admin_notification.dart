@@ -4,6 +4,7 @@ import 'admin_dashboard.dart';
 import 'admin_detail.dart';
 import 'admin_page_chrome.dart';
 import 'admin_setting.dart';
+import 'mobile_content_api.dart';
 
 enum NotificationLanguage { english, thai }
 
@@ -19,8 +20,46 @@ class AdminNotificationPage extends StatefulWidget {
 class _AdminNotificationPageState extends State<AdminNotificationPage> {
   NotificationLanguage _language = NotificationLanguage.english;
   NotificationTab _selectedTab = NotificationTab.barrierReport;
+  final MobileContentApi _contentApi = MobileContentApi();
+  List<Map<String, dynamic>> _reports = [];
+  bool _loadingReports = true;
 
   bool get _isEnglish => _language == NotificationLanguage.english;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReports();
+  }
+
+  Future<void> _loadReports() async {
+    try {
+      final reports = await _contentApi.adminReports();
+      if (mounted) setState(() => _reports = reports);
+    } catch (error) {
+      if (mounted) _showSnackBar(error.toString());
+    } finally {
+      if (mounted) setState(() => _loadingReports = false);
+    }
+  }
+
+  Future<void> _setReportStatus(
+    Map<String, dynamic> report,
+    String status,
+  ) async {
+    try {
+      await _contentApi.updateReportStatus(report['_id'].toString(), status);
+      await _loadReports();
+    } catch (error) {
+      if (mounted) _showSnackBar(error.toString());
+    }
+  }
+
+  @override
+  void dispose() {
+    _contentApi.close();
+    super.dispose();
+  }
 
   // แก้ไขข้อความต่างดาวเป็นภาษาไทยที่ถูกต้อง
   String get _title => _isEnglish ? 'Notification' : 'การแจ้งเตือน';
@@ -106,29 +145,34 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
               child: Column(
                 children: [
                   if (_selectedTab == NotificationTab.barrierReport) ...[
-                    NotificationBarrierCard(
-                      roomTitle: '$_roomLabel 301',
-                      reporter: '$_byLabel Asia Thongkong ',
-                      locationLabel: 'AS',
-                      approvedLabel: _approvedLabel,
-                      rejectLabel: _rejectLabel,
-                      seeDetailsLabel: _seeDetails,
-                      onApproved: () => _showSnackBar(_approvedLabel),
-                      onReject: () => _showSnackBar(_rejectLabel),
-                      onSeeDetails: _navigateToDetail,
-                    ),
-                    const SizedBox(height: 16),
-                    NotificationBarrierCard(
-                      roomTitle: '$_roomLabel 302',
-                      reporter: '$_byLabel Asia Thongkong ',
-                      locationLabel: 'AS',
-                      approvedLabel: _approvedLabel,
-                      rejectLabel: _rejectLabel,
-                      seeDetailsLabel: _seeDetails,
-                      onApproved: () => _showSnackBar(_approvedLabel),
-                      onReject: () => _showSnackBar(_rejectLabel),
-                      onSeeDetails: _navigateToDetail,
-                    ),
+                    if (_loadingReports)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: CircularProgressIndicator(),
+                      )
+                    else if (_reports.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text('No reports yet'),
+                      )
+                    else
+                      for (final report in _reports) ...[
+                        NotificationBarrierCard(
+                          roomTitle: report['type']?.toString() ?? 'Report',
+                          reporter:
+                              '$_byLabel ${report['reporterEmail'] ?? ''}',
+                          locationLabel: report['location']?.toString() ?? '',
+                          approvedLabel: _approvedLabel,
+                          rejectLabel: _rejectLabel,
+                          seeDetailsLabel:
+                              report['status']?.toString() ?? _seeDetails,
+                          onApproved: () =>
+                              _setReportStatus(report, 'approved'),
+                          onReject: () => _setReportStatus(report, 'rejected'),
+                          onSeeDetails: _navigateToDetail,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                   ] else ...[
                     NotificationAlertCard(
                       username: 'Asia Thongkong ',

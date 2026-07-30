@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const database = require('../../../database/indoor-navigation.connection');
 const Schema = mongoose.Schema;
 
 const pointSchema = new Schema({
@@ -31,5 +32,5 @@ destinationSchema.index({
   searchKeywords: 'text'
 });
 
-module.exports = mongoose.models.NavigationDestination ||
-  mongoose.model('NavigationDestination', destinationSchema);
+module.exports = database.models.NavigationDestination ||
+  database.model('NavigationDestination', destinationSchema);

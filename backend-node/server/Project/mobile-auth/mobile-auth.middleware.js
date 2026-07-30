@@ -8,16 +8,22 @@ function bearerToken(request) {
 }
 
 async function requireAdmin(request, response, next) {
+  return requireAuth(request, response, async function () {
+    if (request.mobileAuth.user.role !== 'admin') {
+      return response.status(403).json({
+        error: { code: 'ADMIN_REQUIRED', message: 'Administrator access is required' }
+      });
+    }
+    return next();
+  });
+}
+
+async function requireAuth(request, response, next) {
   try {
     const authenticated = await auth.authenticate(bearerToken(request));
     if (!authenticated) {
       return response.status(401).json({
         error: { code: 'UNAUTHORIZED', message: 'A valid sign-in session is required' }
-      });
-    }
-    if (authenticated.user.role !== 'admin') {
-      return response.status(403).json({
-        error: { code: 'ADMIN_REQUIRED', message: 'Administrator access is required' }
       });
     }
     request.mobileAuth = authenticated;
@@ -27,4 +33,4 @@ async function requireAdmin(request, response, next) {
   }
 }
 
-module.exports = { requireAdmin };
+module.exports = { requireAdmin, requireAuth };

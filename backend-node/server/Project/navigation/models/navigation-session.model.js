@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const database = require('../../../database/indoor-navigation.connection');
 const Schema = mongoose.Schema;
 
 const pointSchema = new Schema({
@@ -47,8 +48,9 @@ navigationSessionSchema.index(
   { partialFilterExpression: { status: 'active' } }
 );
 
-module.exports = mongoose.model(
-  'Navigation_Session',
-  navigationSessionSchema,
-  'Navigation_Sessions'
-);
+module.exports = database.models.Navigation_Session ||
+  database.model(
+    'Navigation_Session',
+    navigationSessionSchema,
+    'Navigation_Sessions'
+  );

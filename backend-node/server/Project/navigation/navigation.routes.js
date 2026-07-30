@@ -6,6 +6,7 @@ const navigation = require('./service/navigation-session.service');
 const config = require('./config/navigation.config');
 const simulatorScenarios = require('./simulator/scenarios');
 const mapAdminRoutes = require('./map-admin.routes');
+const controllerRoutes = require('./controller.routes');
 
 function clientId(request) {
   return String(
@@ -32,6 +33,7 @@ function fail(response, error) {
 }
 
 router.use('/admin', mapAdminRoutes);
+router.use('/controller', controllerRoutes);
 
 router.get('/health', async function (_request, response) {
   try {

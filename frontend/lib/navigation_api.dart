@@ -146,5 +146,16 @@ class NavigationApi {
     );
   }
 
+  Future<Map<String, dynamic>> completeSession({
+    required String sessionId,
+    required String clientId,
+  }) {
+    return _request(
+      'POST',
+      '/sessions/${Uri.encodeComponent(sessionId)}/complete',
+      clientId: clientId,
+    );
+  }
+
   void close() => _client.close();
 }

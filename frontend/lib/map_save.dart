@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mfuguide/app_theme.dart';
 import 'package:mfuguide/map_favorite.dart';
+import 'package:mfuguide/mobile_content_api.dart';
 import 'package:mfuguide/map_screen.dart';
 import 'package:mfuguide/map_setting.dart';
 import 'package:mfuguide/user_navigation_bar.dart';
@@ -10,12 +11,14 @@ class MapSavePage extends StatefulWidget {
   final String currentLanguage;
   final ValueChanged<String>? onLanguageChanged;
   final String currentLocation;
+  final String destinationId;
 
   const MapSavePage({
     super.key,
     this.currentLanguage = 'EN',
     this.onLanguageChanged,
     this.currentLocation = 'Room 301 , AS',
+    this.destinationId = 'room_1',
   });
 
   @override
@@ -26,6 +29,8 @@ class _MapSavePageState extends State<MapSavePage> {
   final Color _burgundy = AppColors.burgundy;
   String _selectedCategory = 'Home';
   late String _language;
+  final MobileContentApi _contentApi = MobileContentApi();
+  bool _saving = false;
 
   @override
   void initState() {
@@ -46,18 +51,19 @@ class _MapSavePageState extends State<MapSavePage> {
     }
   }
 
-  void _saveAddress() {
-    final parts = widget.currentLocation.split(',');
-    final room = parts.isNotEmpty ? parts[0].trim() : widget.currentLocation;
-    final building = parts.length > 1 ? parts[1].trim() : '';
-
-    final newFavorite = {
-      'room': room,
-      'tag': _selectedCategory,
-      'building': building,
-    };
-
-    MapFavoritePage.favoriteList.add(newFavorite);
+  Future<void> _saveAddress() async {
+    setState(() => _saving = true);
+    try {
+      await _contentApi.saveFavorite(widget.destinationId, _selectedCategory);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      return;
+    }
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -66,7 +72,13 @@ class _MapSavePageState extends State<MapSavePage> {
       ),
     );
 
-    Navigator.pop(context, newFavorite);
+    Navigator.pop(context, true);
+  }
+
+  @override
+  void dispose() {
+    _contentApi.close();
+    super.dispose();
   }
 
   Widget _buildCategoryChip(String label, IconData icon) {
@@ -127,7 +139,7 @@ class _MapSavePageState extends State<MapSavePage> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         blurRadius: 18,
                       ),
                     ],
@@ -235,7 +247,7 @@ class _MapSavePageState extends State<MapSavePage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _saveAddress,
+                    onPressed: _saving ? null : _saveAddress,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4CAF50),
                       foregroundColor: Colors.white,

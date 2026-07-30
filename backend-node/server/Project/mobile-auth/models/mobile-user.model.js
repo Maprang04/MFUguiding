@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const database = require('../../../database/indoor-navigation.connection');
 const Schema = mongoose.Schema;
 
 const mobileUserSchema = new Schema({
@@ -13,5 +14,5 @@ const mobileUserSchema = new Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { collection: 'Mobile_Users' });
 
-module.exports = mongoose.models.MobileUser ||
-  mongoose.model('MobileUser', mobileUserSchema);
+module.exports = database.models.MobileUser ||
+  database.model('MobileUser', mobileUserSchema);

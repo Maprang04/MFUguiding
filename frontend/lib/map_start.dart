@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:mfuguide/map_report.dart';
 import 'package:mfuguide/floor_plan_coordinates.dart';
@@ -34,6 +36,8 @@ class _MapStartPageState extends State<MapStartPage> {
   String? _sessionId;
   late final String _clientId;
   Map<String, dynamic>? _session;
+  int? _lastRouteVersion;
+  bool _arrived = false;
 
   late String _language;
 
@@ -90,12 +94,27 @@ class _MapStartPageState extends State<MapStartPage> {
         );
         final current = (result['session'] as Map?)?.cast<String, dynamic>();
         if (!mounted || current == null) return;
+        final routeVersion = (current['route_version'] as num?)?.toInt();
+        final rerouted =
+            _lastRouteVersion != null &&
+            routeVersion != null &&
+            routeVersion > _lastRouteVersion!;
         setState(() {
           _session = current;
+          _lastRouteVersion = routeVersion;
           _isLoading = false;
         });
+        if (rerouted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(t('Route recalculated', 'คำนวณเส้นทางใหม่แล้ว')),
+              duration: const Duration(milliseconds: 900),
+            ),
+          );
+        }
         await Future<void>.delayed(const Duration(milliseconds: 850));
       }
+      await _playRouteToDestination();
     } on NavigationApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -103,6 +122,101 @@ class _MapStartPageState extends State<MapStartPage> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _playRouteToDestination() async {
+    final route = ((_session?['route'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((point) => Map<String, dynamic>.from(point))
+        .toList();
+    if (route.length < 2) return;
+    for (var index = 1; index < route.length; index++) {
+      if (!mounted || _stopping) return;
+      final remaining = route.sublist(index);
+      setState(() {
+        _session = {
+          ...?_session,
+          'estimated_position': route[index],
+          'position_source': 'simulator_route_progress',
+          'confidence': 'simulated',
+          'route': remaining,
+        };
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+    }
+    await _completeArrival();
+  }
+
+  Future<void> _completeArrival() async {
+    if (_arrived || _stopping || _sessionId == null) return;
+    _arrived = true;
+    try {
+      final completed = await _navigationApi.completeSession(
+        sessionId: _sessionId!,
+        clientId: _clientId,
+      );
+      if (mounted) {
+        setState(() {
+          _session = {
+            ...?_session,
+            'status': completed['status'],
+            'completed_at': completed['completed_at'],
+          };
+        });
+      }
+    } on NavigationApiException {
+      // Keep the local arrival state if a development backend restarts.
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: const Icon(
+          Icons.check_circle_rounded,
+          color: Colors.green,
+          size: 52,
+        ),
+        title: Text(t('You have arrived', 'ถึงจุดหมายแล้ว')),
+        content: Text(widget.destinationLabel, textAlign: TextAlign.center),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t('Done', 'เสร็จสิ้น')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double get _remainingDistance {
+    final route = ((_session?['route'] as List?) ?? const [])
+        .whereType<Map>()
+        .toList();
+    if (route.length < 2) return 0;
+    var distance = 0.0;
+    for (var index = 1; index < route.length; index++) {
+      final previous = route[index - 1];
+      final current = route[index];
+      if (previous['x'] is num &&
+          previous['y'] is num &&
+          current['x'] is num &&
+          current['y'] is num) {
+        distance += math.sqrt(
+          math.pow(
+                (current['x'] as num).toDouble() -
+                    (previous['x'] as num).toDouble(),
+                2,
+              ) +
+              math.pow(
+                (current['y'] as num).toDouble() -
+                    (previous['y'] as num).toDouble(),
+                2,
+              ),
+        );
+      }
+    }
+    return distance;
   }
 
   Future<void> _closeNavigation() async {
@@ -139,6 +253,10 @@ class _MapStartPageState extends State<MapStartPage> {
       MaterialPageRoute(
         builder: (_) => MapReportPage(
           currentLanguage: _language,
+          navigationSessionId: _sessionId,
+          estimatedPosition: (_session?['estimated_position'] as Map?)
+              ?.cast<String, dynamic>(),
+          initialLocation: widget.destinationLabel,
           onLanguageChanged: widget.onLanguageChanged,
         ),
       ),
@@ -300,6 +418,17 @@ class _MapStartPageState extends State<MapStartPage> {
         : _error != null
         ? t('Backend connection failed', 'เชื่อมต่อ Backend ไม่สำเร็จ')
         : zone ?? t('Keep Straight on', 'เดินตรงไป');
+    final distance = _remainingDistance;
+    final displayedGuideText = !_isLoading && _error == null
+        ? _arrived
+              ? t('You have arrived', 'ถึงจุดหมายแล้ว')
+              : distance > 0
+              ? t(
+                  'Continue for ${distance.toStringAsFixed(1)} m',
+                  'เดินต่ออีก ${distance.toStringAsFixed(1)} ม.',
+                )
+              : guideText
+        : guideText;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
       decoration: BoxDecoration(
@@ -335,7 +464,7 @@ class _MapStartPageState extends State<MapStartPage> {
           const SizedBox(width: 14),
           Flexible(
             child: Text(
-              guideText,
+              displayedGuideText,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -485,6 +614,10 @@ class _MapStartPageState extends State<MapStartPage> {
     final positionText = position == null
         ? t('Waiting for position', 'กำลังรอตำแหน่ง')
         : '(${position['x']}, ${position['y']}) • ${route.length} waypoints';
+    final displayedPositionText = position == null
+        ? positionText
+        : '${_remainingDistance.toStringAsFixed(1)} m remaining • '
+              '${route.length} waypoints';
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -513,7 +646,7 @@ class _MapStartPageState extends State<MapStartPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  positionText,
+                  displayedPositionText,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ],
@@ -550,11 +683,13 @@ class _FollowNavigationMap extends StatefulWidget {
 }
 
 class _FollowNavigationMapState extends State<_FollowNavigationMap>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final TransformationController _transformController =
       TransformationController();
   late final AnimationController _cameraController;
+  late final AnimationController _markerController;
   Animation<Matrix4>? _cameraAnimation;
+  Animation<Offset>? _markerAnimation;
   Size _viewportSize = Size.zero;
 
   @override
@@ -568,6 +703,10 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
           final animation = _cameraAnimation;
           if (animation != null) _transformController.value = animation.value;
         });
+    _markerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _followUser());
   }
 
@@ -577,6 +716,25 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
     final old = oldWidget.currentPosition;
     final current = widget.currentPosition;
     if (old?['x'] != current?['x'] || old?['y'] != current?['y']) {
+      if (current?['x'] is num && current?['y'] is num) {
+        final end = Offset(
+          (current!['x'] as num).toDouble(),
+          (current['y'] as num).toDouble(),
+        );
+        final begin = old?['x'] is num && old?['y'] is num
+            ? Offset(
+                (old!['x'] as num).toDouble(),
+                (old['y'] as num).toDouble(),
+              )
+            : end;
+        _markerAnimation = Tween<Offset>(begin: begin, end: end).animate(
+          CurvedAnimation(
+            parent: _markerController,
+            curve: Curves.easeInOutCubic,
+          ),
+        );
+        _markerController.forward(from: 0);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) => _followUser());
     }
   }
@@ -623,6 +781,7 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
   @override
   void dispose() {
     _cameraController.dispose();
+    _markerController.dispose();
     _transformController.dispose();
     super.dispose();
   }
@@ -647,11 +806,20 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
                       fit: BoxFit.contain,
                       filterQuality: FilterQuality.high,
                     ),
-                    CustomPaint(
-                      painter: _NavigationRoutePainter(
-                        route: widget.route,
-                        currentPosition: widget.currentPosition,
-                      ),
+                    AnimatedBuilder(
+                      animation: _markerController,
+                      builder: (context, _) {
+                        final animated = _markerAnimation?.value;
+                        final position = animated == null
+                            ? widget.currentPosition
+                            : {'x': animated.dx, 'y': animated.dy};
+                        return CustomPaint(
+                          painter: _NavigationRoutePainter(
+                            route: widget.route,
+                            currentPosition: position,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

@@ -160,6 +160,7 @@ class _MapScreenState extends State<MapScreen> {
       MaterialPageRoute(
         builder: (_) => MapSavePage(
           currentLanguage: _selectedLanguage,
+          destinationId: result['id'] ?? 'room_1',
           currentLocation: '${result['room']}, ${result['building']}',
           onLanguageChanged: (language) {
             setState(() => _selectedLanguage = language);

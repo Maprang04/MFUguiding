@@ -4,6 +4,7 @@ const securityRoutes = require("../Project/security/security.routes");
 const settingsRoutes = require("../Project/settings/settings.routes");
 const navigationRoutes = require("../Project/navigation/navigation.routes");
 const mobileAuthRoutes = require("../Project/mobile-auth/mobile-auth.routes");
+const mobileContentRoutes = require("../Project/mobile-content/mobile-content.routes");
 
 module.exports = function (app) {
   const path = "/api/v1";
@@ -13,5 +14,6 @@ module.exports = function (app) {
   app.use(path + '/security', securityRoutes);
   app.use(path + '/navigation', navigationRoutes);
   app.use(path + '/mobile-auth', mobileAuthRoutes);
+  app.use(path + '/mobile-content', mobileContentRoutes);
   app.use(path, accountRoutes);
 };

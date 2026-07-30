@@ -32,6 +32,11 @@ function mongooseRepository() {
       const created = await ControllerObservation.create(payload);
       return created.toObject();
     },
+    observationExists: function (externalObservationId) {
+      if (!externalObservationId) return Promise.resolve(false);
+      return ControllerObservation.exists({ externalObservationId })
+        .then(Boolean);
+    },
     listObservations: function (sessionId, limit) {
       return ControllerObservation.find({ sessionId })
         .sort({ timestamp: -1 })

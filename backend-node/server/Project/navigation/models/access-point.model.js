@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const database = require('../../../database/indoor-navigation.connection');
 const Schema = mongoose.Schema;
 
 const pointSchema = new Schema({
@@ -26,5 +27,5 @@ const accessPointSchema = new Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { collection: 'Navigation_Access_Points' });
 
-module.exports = mongoose.models.NavigationAccessPoint ||
-  mongoose.model('NavigationAccessPoint', accessPointSchema);
+module.exports = database.models.NavigationAccessPoint ||
+  database.model('NavigationAccessPoint', accessPointSchema);

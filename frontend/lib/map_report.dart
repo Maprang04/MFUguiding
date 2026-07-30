@@ -2,17 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:mfuguide/map_favorite.dart';
 import 'package:mfuguide/map_screen.dart';
 import 'package:mfuguide/map_setting.dart';
+import 'package:mfuguide/mobile_content_api.dart';
 import 'package:mfuguide/user_navigation_bar.dart';
 import 'package:mfuguide/user_page_header.dart';
 
 class MapReportPage extends StatefulWidget {
   final String currentLanguage;
   final ValueChanged<String>? onLanguageChanged;
+  final String? navigationSessionId;
+  final Map<String, dynamic>? estimatedPosition;
+  final String? initialLocation;
 
   const MapReportPage({
     super.key,
     this.currentLanguage = 'EN',
     this.onLanguageChanged,
+    this.navigationSessionId,
+    this.estimatedPosition,
+    this.initialLocation,
   });
 
   @override
@@ -27,11 +34,14 @@ class _MapReportPageState extends State<MapReportPage> {
   final TextEditingController _descriptionController = TextEditingController();
 
   late String _language;
+  final MobileContentApi _contentApi = MobileContentApi();
+  bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
     _language = widget.currentLanguage;
+    _locationController.text = widget.initialLocation ?? '';
   }
 
   void _toggleLanguage() {
@@ -55,7 +65,35 @@ class _MapReportPageState extends State<MapReportPage> {
     Navigator.pop(context);
   }
 
-  void _handleSubmit() {
+  Future<void> _handleSubmit() async {
+    if (_typeController.text.trim().isEmpty ||
+        _locationController.text.trim().isEmpty ||
+        _descriptionController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t('Complete all fields.', 'กรอกข้อมูลให้ครบทุกช่อง')),
+        ),
+      );
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      await _contentApi.submitReport(
+        type: _typeController.text.trim(),
+        location: _locationController.text.trim(),
+        description: _descriptionController.text.trim(),
+        navigationSessionId: widget.navigationSessionId,
+        estimatedPosition: widget.estimatedPosition,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      return;
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -75,6 +113,7 @@ class _MapReportPageState extends State<MapReportPage> {
     _typeController.dispose();
     _locationController.dispose();
     _descriptionController.dispose();
+    _contentApi.close();
     super.dispose();
   }
 
@@ -165,7 +204,7 @@ class _MapReportPageState extends State<MapReportPage> {
                             const SizedBox(width: 14),
                             Expanded(
                               child: ElevatedButton(
-                                onPressed: _handleSubmit,
+                                onPressed: _submitting ? null : _handleSubmit,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF4CAF50),
                                   shape: RoundedRectangleBorder(
