@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'admin_dashboard.dart';
+import 'app_shells.dart';
 import 'app_theme.dart';
 import 'auth_api.dart';
-import 'map_screen.dart';
 import 'navigation_api.dart';
 import 'session_manager.dart';
 
@@ -40,8 +39,8 @@ class _LoginScreenState extends State<LoginScreen> {
       await SessionManager.save(result);
       if (!mounted) return;
       final destination = result.role == 'admin'
-          ? const AdminDashboardPage()
-          : const MapScreen();
+          ? const AdminAppShell()
+          : const UserAppShell();
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => destination),

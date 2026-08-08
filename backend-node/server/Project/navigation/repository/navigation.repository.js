@@ -1,7 +1,7 @@
 'use strict';
 
 const NavigationSession = require('../models/navigation-session.model');
-const ControllerObservation = require('../models/controller-observation.model');
+const NavigationObservation = require('../models/navigation-observation.model');
 
 function mongooseRepository() {
   return {
@@ -29,16 +29,16 @@ function mongooseRepository() {
       ).lean();
     },
     createObservation: async function (payload) {
-      const created = await ControllerObservation.create(payload);
+      const created = await NavigationObservation.create(payload);
       return created.toObject();
     },
     observationExists: function (externalObservationId) {
       if (!externalObservationId) return Promise.resolve(false);
-      return ControllerObservation.exists({ externalObservationId })
+      return NavigationObservation.exists({ externalObservationId })
         .then(Boolean);
     },
     listObservations: function (sessionId, limit) {
-      return ControllerObservation.find({ sessionId })
+      return NavigationObservation.find({ sessionId })
         .sort({ timestamp: -1 })
         .limit(limit)
         .lean();

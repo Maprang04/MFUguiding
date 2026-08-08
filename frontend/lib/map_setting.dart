@@ -10,11 +10,13 @@ import 'package:mfuguide/session_manager.dart';
 class MapSettingPage extends StatefulWidget {
   final String currentLanguage;
   final ValueChanged<String>? onLanguageChanged;
+  final bool embedded;
 
   const MapSettingPage({
     super.key,
     this.currentLanguage = 'EN',
     this.onLanguageChanged,
+    this.embedded = false,
   });
 
   @override
@@ -29,6 +31,14 @@ class _MapSettingPageState extends State<MapSettingPage> {
   void initState() {
     super.initState();
     _language = widget.currentLanguage;
+  }
+
+  @override
+  void didUpdateWidget(covariant MapSettingPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentLanguage != widget.currentLanguage) {
+      _language = widget.currentLanguage;
+    }
   }
 
   void _toggleLanguage() {
@@ -227,7 +237,7 @@ class _MapSettingPageState extends State<MapSettingPage> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomBar(context),
+      bottomNavigationBar: widget.embedded ? null : _buildBottomBar(context),
     );
   }
 

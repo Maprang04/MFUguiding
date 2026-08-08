@@ -276,8 +276,7 @@ function createNavigationService(dependencies) {
       backend: 'ok',
       mongodb: 'ok',
       positioning_engine: 'ok',
-      observation_source: config.observationSource,
-      cisco_controller: config.controllerApiKey ? 'ingestion_ready' : 'not_configured'
+      observation_source: config.observationSource
     };
     try {
       await repository.healthCheck();

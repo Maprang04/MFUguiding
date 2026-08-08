@@ -12,7 +12,6 @@ const pointSchema = new Schema({
 const accessPointSchema = new Schema({
   apId: { type: String, required: true, unique: true, index: true, trim: true },
   floorId: { type: String, required: true, index: true, trim: true },
-  controllerApId: { type: String, default: null, sparse: true, index: true, trim: true },
   bssid: { type: String, default: null, sparse: true, index: true, trim: true },
   position: { type: pointSchema, required: true },
   zoneId: { type: String, required: true, index: true, trim: true },

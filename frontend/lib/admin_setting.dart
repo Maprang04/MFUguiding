@@ -9,7 +9,8 @@ import 'app_theme.dart';
 import 'session_manager.dart';
 
 class AdminSettingPage extends StatefulWidget {
-  const AdminSettingPage({super.key});
+  final bool embedded;
+  const AdminSettingPage({super.key, this.embedded = false});
 
   @override
   State<AdminSettingPage> createState() => _AdminSettingPageState();
@@ -79,7 +80,7 @@ class _AdminSettingPageState extends State<AdminSettingPage> {
           ),
         ],
       ),
-      bottomNavigationBar: AdminNavigationBar(
+      bottomNavigationBar: widget.embedded ? null : AdminNavigationBar(
         currentIndex: 2,
         isEnglish: _isEnglish,
         onTap: (index) {

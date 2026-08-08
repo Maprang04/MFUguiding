@@ -11,7 +11,8 @@ enum NotificationLanguage { english, thai }
 enum NotificationTab { barrierReport, emergencyAlerts }
 
 class AdminNotificationPage extends StatefulWidget {
-  const AdminNotificationPage({super.key});
+  final bool embedded;
+  const AdminNotificationPage({super.key, this.embedded = false});
 
   @override
   State<AdminNotificationPage> createState() => _AdminNotificationPageState();
@@ -202,7 +203,7 @@ class _AdminNotificationPageState extends State<AdminNotificationPage> {
           ),
         ],
       ),
-      bottomNavigationBar: AdminNavigationBar(
+      bottomNavigationBar: widget.embedded ? null : AdminNavigationBar(
         currentIndex: 1,
         isEnglish: _isEnglish,
         onTap: (index) {

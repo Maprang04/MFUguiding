@@ -35,40 +35,23 @@ DELETE /api/v1/navigation/sessions/:sessionId
 GET    /api/v1/navigation/sessions/:sessionId/observations
 POST   /api/v1/navigation/simulator/observations
 POST   /api/v1/navigation/simulator/scenarios/:scenarioId/run
-POST   /api/v1/navigation/controller/observations
+POST   /api/v1/navigation/mobile/observations
 ```
 
 Public navigation routes do not require sign-in. The client creates a session
 with `client_id`, then sends the same value in the
 `x-navigation-client-id` header when reading or changing that session.
 Administrative APIs outside this module keep their existing authentication.
-Simulator endpoints must be disabled in production.
-
-## Cisco controller ingestion
-
-The controller-specific poller normalizes vendor responses into:
+Simulator endpoints must be disabled in production. The Android application
+submits its connected AP and median RSSI in this form:
 
 ```json
 {
-  "observation_id": "unique-controller-event-id",
   "client_id": "same-id-used-to-create-the-navigation-session",
-  "associated_ap": "controller AP name, ID, or BSSID",
+  "associated_ap": "AP2",
   "rssi": -65,
   "timestamp": "2026-07-30T10:00:00Z"
 }
-```
-
-Send the observation with `x-controller-api-key`. AP identifiers are resolved
-against `apId`, `controllerApId`, or `bssid` in
-`Navigation_Access_Points`. Duplicate, stale, future, unknown-AP, and invalid
-RSSI observations are rejected before they affect positioning.
-
-Copy the relevant values from `.env.navigation.example` into `.env.local`.
-After the Cisco administrator supplies the controller URL, clients path,
-credentials, and response field names, test a one-shot poll with:
-
-```powershell
-npm.cmd run poll:cisco
 ```
 
 ## Test

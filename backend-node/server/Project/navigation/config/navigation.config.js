@@ -12,10 +12,7 @@ module.exports = {
   staleAfterMs: numberFromEnv('POSITIONING_STALE_AFTER_MS', 10000),
   roamingConfirmations: numberFromEnv('POSITIONING_ROAMING_CONFIRMATIONS', 3),
   simulatorEnabled: String(process.env.POSITIONING_SIMULATOR_ENABLED || 'true').toLowerCase() === 'true',
-  observationSource: String(process.env.NAVIGATION_OBSERVATION_SOURCE || 'simulator').toLowerCase(),
-  controllerApiKey: String(process.env.CONTROLLER_INGEST_API_KEY || ''),
-  controllerMaxAgeMs: numberFromEnv('CONTROLLER_OBSERVATION_MAX_AGE_MS', 30000),
-  controllerFutureSkewMs: numberFromEnv('CONTROLLER_OBSERVATION_FUTURE_SKEW_MS', 5000),
+  observationSource: String(process.env.NAVIGATION_OBSERVATION_SOURCE || 'mobile').toLowerCase(),
   destinations: {
     room_1: { id: 'room_1', label: 'Room 1 entrance', floorId: 'floor-1', position: { x: 15, y: 5 } },
     room_2: { id: 'room_2', label: 'Room 2 entrance', floorId: 'floor-1', position: { x: 15, y: 9 } },

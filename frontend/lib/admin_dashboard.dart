@@ -9,7 +9,8 @@ import 'app_theme.dart';
 import 'mobile_content_api.dart';
 
 class AdminDashboardPage extends StatefulWidget {
-  const AdminDashboardPage({super.key});
+  final bool embedded;
+  const AdminDashboardPage({super.key, this.embedded = false});
 
   @override
   State<AdminDashboardPage> createState() => _AdminDashboardPageState();
@@ -200,7 +201,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           ),
         ],
       ),
-      bottomNavigationBar: AdminNavigationBar(
+      bottomNavigationBar: widget.embedded ? null : AdminNavigationBar(
         currentIndex: 0,
         isEnglish: _isEnglish,
         onTap: (index) {

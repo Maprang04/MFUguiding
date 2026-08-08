@@ -6,7 +6,6 @@ const navigation = require('./service/navigation-session.service');
 const config = require('./config/navigation.config');
 const simulatorScenarios = require('./simulator/scenarios');
 const mapAdminRoutes = require('./map-admin.routes');
-const controllerRoutes = require('./controller.routes');
 
 function clientId(request) {
   return String(
@@ -33,7 +32,6 @@ function fail(response, error) {
 }
 
 router.use('/admin', mapAdminRoutes);
-router.use('/controller', controllerRoutes);
 
 router.get('/health', async function (_request, response) {
   try {
@@ -164,6 +162,24 @@ router.post('/simulator/observations', async function (request, response) {
   try {
     return ok(response, await navigation.submitObservation(
       Object.assign({}, request.body || {}, { source: 'simulator' })
+    ), 202);
+  } catch (error) {
+    return fail(response, error);
+  }
+});
+
+router.post('/mobile/observations', async function (request, response) {
+  const requestClientId = clientId(request);
+  const bodyClientId = String(request.body && request.body.client_id || '').trim();
+  if (!requestClientId || requestClientId !== bodyClientId) {
+    return fail(response, Object.assign(new Error('Client id does not match the request owner'), {
+      status: 403,
+      code: 'CLIENT_ID_MISMATCH'
+    }));
+  }
+  try {
+    return ok(response, await navigation.submitObservation(
+      Object.assign({}, request.body || {}, { source: 'mobile_connected_ap' })
     ), 202);
   } catch (error) {
     return fail(response, error);

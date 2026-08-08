@@ -10,7 +10,22 @@ import 'navigation_api.dart';
 import 'user_navigation_bar.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final bool embedded;
+  final String currentLanguage;
+  final ValueChanged<String>? onLanguageChanged;
+  final ValueChanged<bool>? onNavigationModeChanged;
+  final String? requestedDestinationId;
+  final int destinationSelectionRevision;
+
+  const MapScreen({
+    super.key,
+    this.embedded = false,
+    this.currentLanguage = 'EN',
+    this.onLanguageChanged,
+    this.onNavigationModeChanged,
+    this.requestedDestinationId,
+    this.destinationSelectionRevision = 0,
+  });
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -57,7 +72,35 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedLanguage = widget.currentLanguage;
     _loadDestinations();
+  }
+
+  @override
+  void didUpdateWidget(covariant MapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentLanguage != widget.currentLanguage) {
+      _selectedLanguage = widget.currentLanguage;
+    }
+    if (oldWidget.destinationSelectionRevision !=
+        widget.destinationSelectionRevision) {
+      _selectDestinationById(widget.requestedDestinationId);
+    }
+  }
+
+  void _selectDestinationById(String? destinationId) {
+    if (destinationId == null) return;
+    for (final location in _locations) {
+      if (location['id'] == destinationId) {
+        _searchController.text = location['room'] ?? '';
+        setState(() {
+          _searchResult = location;
+          _searched = true;
+          _suggestions = const [];
+        });
+        return;
+      }
+    }
   }
 
   Future<void> _loadDestinations() async {
@@ -76,6 +119,7 @@ class _MapScreenState extends State<MapScreen> {
           };
         }).toList();
       });
+      _selectDestinationById(widget.requestedDestinationId);
     } on NavigationApiException {
       // Keep the bundled destinations so the search UI remains usable while
       // the local backend is starting.
@@ -174,11 +218,13 @@ class _MapScreenState extends State<MapScreen> {
     if (_searchResult == null) return;
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _navigationMode = true);
+    widget.onNavigationModeChanged?.call(true);
   }
 
   void _closeNavigationMode() {
     if (!mounted) return;
     setState(() => _navigationMode = false);
+    widget.onNavigationModeChanged?.call(false);
   }
 
   @override
@@ -213,6 +259,7 @@ class _MapScreenState extends State<MapScreen> {
               setState(() {
                 _selectedLanguage = _selectedLanguage == 'EN' ? 'TH' : 'EN';
               });
+              widget.onLanguageChanged?.call(_selectedLanguage);
             },
             onChanged: _onSearchChanged,
             onSearch: _performSearch,
@@ -286,6 +333,7 @@ class _MapScreenState extends State<MapScreen> {
                     onStart: _openStartPage,
                   ),
           ),
+          if (!widget.embedded)
           UserNavigationBar(
             currentIndex: 0,
             language: _selectedLanguage,

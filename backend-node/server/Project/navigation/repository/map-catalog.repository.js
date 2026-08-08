@@ -81,7 +81,6 @@ const mongoCatalog = {
       return {
         name: item.apId,
         floorId: item.floorId,
-        controllerApId: item.controllerApId,
         bssid: item.bssid,
         position: item.position,
         zone: item.zoneId,

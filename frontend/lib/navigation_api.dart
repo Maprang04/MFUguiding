@@ -135,6 +135,24 @@ class NavigationApi {
     );
   }
 
+  Future<Map<String, dynamic>> submitMobileObservation({
+    required String clientId,
+    required String associatedAp,
+    required num rssi,
+  }) {
+    return _request(
+      'POST',
+      '/mobile/observations',
+      body: {
+        'client_id': clientId,
+        'associated_ap': associatedAp,
+        'rssi': rssi,
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+      },
+      clientId: clientId,
+    );
+  }
+
   Future<void> finishSession({
     required String sessionId,
     required String clientId,

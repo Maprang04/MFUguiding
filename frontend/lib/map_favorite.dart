@@ -6,7 +6,18 @@ import 'mobile_content_api.dart';
 import 'user_navigation_bar.dart';
 
 class MapFavoritePage extends StatefulWidget {
-  const MapFavoritePage({super.key});
+  final bool embedded;
+  final String currentLanguage;
+  final ValueChanged<String>? onLanguageChanged;
+  final ValueChanged<String>? onDestinationSelected;
+
+  const MapFavoritePage({
+    super.key,
+    this.embedded = false,
+    this.currentLanguage = 'EN',
+    this.onLanguageChanged,
+    this.onDestinationSelected,
+  });
 
   @override
   State<MapFavoritePage> createState() => _MapFavoritePageState();
@@ -22,7 +33,16 @@ class _MapFavoritePageState extends State<MapFavoritePage> {
   @override
   void initState() {
     super.initState();
+    _language = widget.currentLanguage;
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant MapFavoritePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentLanguage != widget.currentLanguage) {
+      _language = widget.currentLanguage;
+    }
   }
 
   Future<void> _load() async {
@@ -93,7 +113,7 @@ class _MapFavoritePageState extends State<MapFavoritePage> {
           ),
         ],
       ),
-      bottomNavigationBar: UserNavigationBar(
+      bottomNavigationBar: widget.embedded ? null : UserNavigationBar(
         currentIndex: 1,
         language: _language,
         onMap: () => Navigator.pop(context),
@@ -149,6 +169,7 @@ class _MapFavoritePageState extends State<MapFavoritePage> {
           InkWell(
             onTap: () {
               setState(() => _language = _language == 'EN' ? 'TH' : 'EN');
+              widget.onLanguageChanged?.call(_language);
             },
             borderRadius: BorderRadius.circular(99),
             child: Container(
@@ -275,6 +296,14 @@ class _MapFavoritePageState extends State<MapFavoritePage> {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: t('Navigate here', 'นำทางไปที่นี่'),
+            onPressed: () => widget.onDestinationSelected?.call(
+              item['destination_id'].toString(),
+            ),
+            icon: const Icon(Icons.directions_rounded),
+            color: AppColors.success,
           ),
           IconButton(
             tooltip: t('Remove favorite', 'ลบออกจากรายการโปรด'),

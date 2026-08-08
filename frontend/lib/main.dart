@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_theme.dart';
-import 'admin_dashboard.dart';
+import 'app_shells.dart';
 import 'fail_screen.dart';
 import 'loading_screen.dart';
 import 'login_screen.dart';
-import 'map_screen.dart';
 import 'session_manager.dart';
 
 void main() {
@@ -36,7 +35,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/loading': (_) => const LoadingScreen(),
         '/login': (_) => const LoginScreen(),
-        '/map': (_) => const MapScreen(),
+        '/map': (_) => const UserAppShell(),
         '/fail': (_) => const FailScreen(),
       },
     );
@@ -66,8 +65,8 @@ class _SessionBootstrapState extends State<SessionBootstrap> {
       _destination = result == null
           ? const HomeScreen()
           : result.role == 'admin'
-          ? const AdminDashboardPage()
-          : const MapScreen();
+          ? const AdminAppShell()
+          : const UserAppShell();
     });
   }
 

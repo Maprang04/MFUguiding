@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:mfuguide/map_report.dart';
 import 'package:mfuguide/floor_plan_coordinates.dart';
 import 'package:mfuguide/navigation_api.dart';
 import 'package:mfuguide/user_page_header.dart';
+import 'package:mfuguide/connected_wifi_service.dart';
 
 class MapStartPage extends StatefulWidget {
   final String currentLanguage;
@@ -29,6 +31,10 @@ class MapStartPage extends StatefulWidget {
 class _MapStartPageState extends State<MapStartPage> {
   final Color _burgundy = const Color(0xFF8B0000);
   final NavigationApi _navigationApi = NavigationApi();
+  final ConnectedWifiService _wifiService = ConnectedWifiService();
+  Timer? _wifiTimer;
+  bool _readingWifi = false;
+  final Map<String, List<int>> _rssiWindows = {};
   bool _showObstacleAlert = false;
   bool _isLoading = true;
   bool _stopping = false;
@@ -74,6 +80,12 @@ class _MapStartPageState extends State<MapStartPage> {
           'Backend did not return a navigation session id.',
         );
       }
+      await _readAndSubmitWifi();
+      _wifiTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _readAndSubmitWifi(),
+      );
+      /* Legacy scripted simulator observations removed from the runtime flow.
       const observations = [
         ('AP3', -61),
         ('AP3', -63),
@@ -115,6 +127,7 @@ class _MapStartPageState extends State<MapStartPage> {
         await Future<void>.delayed(const Duration(milliseconds: 850));
       }
       await _playRouteToDestination();
+      */
     } on NavigationApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -124,29 +137,69 @@ class _MapStartPageState extends State<MapStartPage> {
     }
   }
 
-  Future<void> _playRouteToDestination() async {
-    final route = ((_session?['route'] as List?) ?? const [])
-        .whereType<Map>()
-        .map((point) => Map<String, dynamic>.from(point))
-        .toList();
-    if (route.length < 2) return;
-    for (var index = 1; index < route.length; index++) {
-      if (!mounted || _stopping) return;
-      final remaining = route.sublist(index);
+  Future<void> _readAndSubmitWifi() async {
+    if (_readingWifi || _stopping || !mounted) return;
+    _readingWifi = true;
+    try {
+      final reading = await _wifiService.read();
+      final window = _rssiWindows.putIfAbsent(reading.accessPoint, () => []);
+      window.add(reading.rssi);
+      if (window.length > 5) window.removeAt(0);
+      final sorted = [...window]..sort();
+      final median = sorted.length.isOdd
+          ? sorted[sorted.length ~/ 2].toDouble()
+          : (sorted[sorted.length ~/ 2 - 1] + sorted[sorted.length ~/ 2]) / 2;
+      final result = await _navigationApi.submitMobileObservation(
+        clientId: _clientId,
+        associatedAp: reading.accessPoint,
+        rssi: median,
+      );
+      final current = (result['session'] as Map?)?.cast<String, dynamic>();
+      if (!mounted || current == null) return;
+      final routeVersion = (current['route_version'] as num?)?.toInt();
+      final rerouted =
+          _lastRouteVersion != null &&
+          routeVersion != null &&
+          routeVersion > _lastRouteVersion!;
       setState(() {
-        _session = {
-          ...?_session,
-          'estimated_position': route[index],
-          'position_source': 'simulator_route_progress',
-          'confidence': 'simulated',
-          'route': remaining,
-        };
+        _session = current;
+        _lastRouteVersion = routeVersion;
+        _isLoading = false;
+        _error = null;
       });
-      await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (rerouted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              t(
+                'Zone changed. Route recalculated.',
+                'เปลี่ยนโซนและคำนวณเส้นทางใหม่แล้ว',
+              ),
+            ),
+          ),
+        );
+      }
+    } on ConnectedWifiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _isLoading = false;
+        });
+      }
+    } on NavigationApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _isLoading = false;
+        });
+      }
+    } finally {
+      _readingWifi = false;
     }
-    await _completeArrival();
   }
 
+  // Retained for the explicit arrival action that will be wired to a room beacon/QR.
+  // ignore: unused_element
   Future<void> _completeArrival() async {
     if (_arrived || _stopping || _sessionId == null) return;
     _arrived = true;
@@ -243,6 +296,7 @@ class _MapStartPageState extends State<MapStartPage> {
 
   @override
   void dispose() {
+    _wifiTimer?.cancel();
     _navigationApi.close();
     super.dispose();
   }
