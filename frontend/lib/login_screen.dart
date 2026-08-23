@@ -103,10 +103,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 5),
-                    const Text(
-                      'Sign in as a user or administrator',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
+                    // const Text(
+                    //   'Sign in as a user or administrator',
+                    //   style: TextStyle(color: AppColors.muted),
+                    // ),
                     const SizedBox(height: 24),
                     TextField(
                       controller: _emailController,

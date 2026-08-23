@@ -102,7 +102,7 @@ const accessPoints = [
   {
     apId: 'AP1',
     floorId: 'floor-1',
-    position: { x: 16.25, y: 11.75 },
+    position: { x: 17, y: 5 },
     zoneId: 'RIGHT_WING',
     anchors: {
       near: { x: 16.125, y: 8.125 },

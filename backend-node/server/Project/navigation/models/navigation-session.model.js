@@ -14,6 +14,12 @@ const navigationSessionSchema = new Schema({
   userId: { type: String, required: true, index: true },
   clientId: { type: String, required: true, index: true },
   destinationId: { type: String, required: true },
+  startPosition: { type: pointSchema, default: null },
+  startPositionSource: { type: String, default: null },
+  totalSteps: { type: Number, default: 0 },
+  strideLength: { type: Number, default: 0.65 },
+  distanceTravelled: { type: Number, default: 0 },
+  lastProgressAt: { type: Date, default: null },
   status: {
     type: String,
     enum: ['active', 'completed', 'cancelled', 'expired'],

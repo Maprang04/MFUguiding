@@ -168,6 +168,18 @@ router.post('/simulator/observations', async function (request, response) {
   }
 });
 
+router.post('/sessions/:sessionId/progress', async function (request, response) {
+  try {
+    return ok(response, await navigation.submitProgress(
+      request.params.sessionId,
+      clientId(request),
+      request.body || {}
+    ), 202);
+  } catch (error) {
+    return fail(response, error);
+  }
+});
+
 router.post('/mobile/observations', async function (request, response) {
   const requestClientId = clientId(request);
   const bodyClientId = String(request.body && request.body.client_id || '').trim();

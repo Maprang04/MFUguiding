@@ -27,16 +27,28 @@ class MockPositioningClient {
   }
 
   async createSession(input) {
-    this.sessions.set(input.session_id, {
+    const state = {
       sessionId: input.session_id,
       clientId: input.client_id,
       destinationId: input.destination_id,
       currentAp: null,
       candidateAp: null,
       candidateCount: 0,
-      windows: {}
-    });
-    return { session_id: input.session_id, status: 'ready' };
+      windows: {},
+      currentPosition: input.start_position || null,
+      route: []
+    };
+    if (state.currentPosition) {
+      state.route = [state.currentPosition, this.config.destinations[state.destinationId].position];
+      state.hasRoute = true;
+    }
+    this.sessions.set(input.session_id, state);
+    return {
+      session_id: input.session_id,
+      status: 'ready',
+      estimated_position: state.currentPosition,
+      route: state.route
+    };
   }
 
   async submitObservation(sessionId, observation) {
@@ -119,6 +131,35 @@ class MockPositioningClient {
     state.destinationId = destinationId;
     state.hasRoute = false;
     return { session_id: sessionId, destination_id: destinationId };
+  }
+
+  async advanceProgress(sessionId, input) {
+    const state = this.sessions.get(sessionId);
+    if (!state || !state.currentPosition || state.route.length < 2) {
+      const error = new Error('A route is required before progress');
+      error.code = 'ROUTE_NOT_READY';
+      throw error;
+    }
+    const destination = state.route[state.route.length - 1];
+    const dx = destination.x - state.currentPosition.x;
+    const dy = destination.y - state.currentPosition.y;
+    const remaining = Math.hypot(dx, dy);
+    const distance = Math.min(Number(input.distance_meters), remaining);
+    const ratio = remaining ? distance / remaining : 1;
+    state.currentPosition = {
+      x: state.currentPosition.x + dx * ratio,
+      y: state.currentPosition.y + dy * ratio
+    };
+    state.distanceTravelled = (state.distanceTravelled || 0) + distance;
+    state.route = [state.currentPosition, destination];
+    return {
+      estimated_position: state.currentPosition,
+      route: state.route,
+      distance_delta: distance,
+      distance_travelled: state.distanceTravelled,
+      arrived: distance >= remaining,
+      position_source: 'step_route_progress'
+    };
   }
 
   async getSession(sessionId) {

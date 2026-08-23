@@ -21,7 +21,7 @@ module.exports = {
   accessPoints: {
     AP1: {
       name: 'AP1',
-      position: { x: 16.25, y: 11.75 },
+      position: { x: 17, y: 5 },
       zone: 'RIGHT_WING',
       zoneLabel: 'Room 1 / right hallway area',
       anchors: {

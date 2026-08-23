@@ -214,10 +214,13 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  void _openStartPage() {
+  Future<void> _openStartPage() async {
     if (_searchResult == null) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _navigationMode = true);
+    if (!mounted) return;
+    setState(() {
+      _navigationMode = true;
+    });
     widget.onNavigationModeChanged?.call(true);
   }
 
@@ -334,26 +337,26 @@ class _MapScreenState extends State<MapScreen> {
                   ),
           ),
           if (!widget.embedded)
-          UserNavigationBar(
-            currentIndex: 0,
-            language: _selectedLanguage,
-            onMap: () {},
-            onFavorite: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MapFavoritePage()),
-            ),
-            onSettings: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MapSettingPage(
-                  currentLanguage: _selectedLanguage,
-                  onLanguageChanged: (language) {
-                    setState(() => _selectedLanguage = language);
-                  },
+            UserNavigationBar(
+              currentIndex: 0,
+              language: _selectedLanguage,
+              onMap: () {},
+              onFavorite: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MapFavoritePage()),
+              ),
+              onSettings: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MapSettingPage(
+                    currentLanguage: _selectedLanguage,
+                    onLanguageChanged: (language) {
+                      setState(() => _selectedLanguage = language);
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

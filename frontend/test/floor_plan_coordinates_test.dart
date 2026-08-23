@@ -3,7 +3,7 @@ import 'package:mfuguide/floor_plan_coordinates.dart';
 
 void main() {
   const knownLocations = {
-    'AP1': (x: 16.25, y: 11.75),
+    'AP1': (x: 17.0, y: 5.0),
     'AP2': (x: 10.5, y: 9.75),
     'AP3': (x: 2.0, y: 0.5),
     'Room 1 entrance': (x: 15.0, y: 5.0),

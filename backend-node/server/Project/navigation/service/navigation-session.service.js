@@ -33,6 +33,11 @@ function publicSession(session) {
     observation_status: session.observationStatus,
     client_id: session.clientId,
     destination_id: session.destinationId,
+    start_position: session.startPosition,
+    start_position_source: session.startPositionSource,
+    total_steps: session.totalSteps || 0,
+    stride_length: session.strideLength || 0.65,
+    distance_travelled: session.distanceTravelled || 0,
     confirmed_ap: session.currentAp,
     zone: session.currentZone,
     zone_label: session.zoneLabel,
@@ -84,6 +89,10 @@ function createNavigationService(dependencies) {
   async function createSession(input) {
     const clientId = cleanText(input && input.client_id);
     const destinationId = cleanText(input && input.destination_id);
+    const start = input && input.start_position;
+    const startPosition = start && Number.isFinite(Number(start.x)) && Number.isFinite(Number(start.y))
+      ? { x: Number(start.x), y: Number(start.y) }
+      : null;
     if (!clientId || !destinationId) {
       throw serviceError(400, 'INVALID_REQUEST', 'client_id and destination_id are required');
     }
@@ -100,16 +109,24 @@ function createNavigationService(dependencies) {
       await positioning.configure(await catalog.snapshot());
     }
     const sessionId = safeSessionId();
-    await positioning.createSession({
+    const positioningSession = await positioning.createSession({
       session_id: sessionId,
       client_id: clientId,
-      destination_id: destinationId
+      destination_id: destinationId,
+      start_position: startPosition
     });
     const created = await repository.createSession({
       sessionId,
       userId: anonymousUserId,
       clientId,
       destinationId,
+      startPosition,
+      startPositionSource: cleanText(input && input.start_position_source) ||
+        (startPosition ? 'user_selected' : null),
+      estimatedPosition: positioningSession.estimated_position || null,
+      positionSource: startPosition ? 'user_selected_start' : null,
+      route: positioningSession.route || [],
+      routeVersion: positioningSession.route && positioningSession.route.length ? 1 : 0,
       status: 'active',
       observationStatus: 'waiting'
     });
@@ -138,6 +155,16 @@ function createNavigationService(dependencies) {
     const clientId = cleanText(input && input.client_id);
     const associatedAp = cleanText(input && input.associated_ap);
     const rssi = Number(input && input.rssi);
+    const rawRssiReadings = input && input.rssi_readings;
+    const rssiReadings = {};
+    if (rawRssiReadings && typeof rawRssiReadings === 'object') {
+      for (const apName of ['AP1', 'AP2', 'AP3']) {
+        const value = Number(rawRssiReadings[apName]);
+        if (Number.isFinite(value) && value > -95 && value < -20) {
+          rssiReadings[apName] = value;
+        }
+      }
+    }
     const timestamp = input && input.timestamp ? new Date(input.timestamp) : clock();
     const externalObservationId = cleanText(input && input.observation_id);
     if (!clientId || !associatedAp || Number.isNaN(timestamp.getTime())) {
@@ -160,6 +187,7 @@ function createNavigationService(dependencies) {
       clientId,
       associatedAp,
       rssi: Number.isFinite(rssi) ? rssi : 0,
+      rssiReadings: Object.keys(rssiReadings).length ? rssiReadings : null,
       timestamp,
       receivedAt: clock(),
       source: cleanText(input.source) || 'simulator',
@@ -178,11 +206,39 @@ function createNavigationService(dependencies) {
       );
     }
 
-    const result = await positioning.submitObservation(session.sessionId, {
+    const positioningObservation = {
       associated_ap: associatedAp,
       rssi,
+      rssi_readings: Object.keys(rssiReadings).length === 3
+        ? rssiReadings
+        : null,
       timestamp: timestamp.toISOString()
-    });
+    };
+    let result;
+    try {
+      result = await positioning.submitObservation(
+        session.sessionId,
+        positioningObservation
+      );
+    } catch (cause) {
+      if (cause && cause.code === 'POSITIONING_SESSION_NOT_FOUND') {
+        if (typeof positioning.configure === 'function') {
+          await positioning.configure(await catalog.snapshot());
+        }
+        await positioning.createSession({
+          session_id: session.sessionId,
+          client_id: session.clientId,
+          destination_id: session.destinationId,
+          start_position: session.estimatedPosition || session.startPosition || null
+        });
+        result = await positioning.submitObservation(
+          session.sessionId,
+          positioningObservation
+        );
+      } else {
+        throw cause;
+      }
+    }
     const changes = {
       observationStatus: 'fresh',
       currentAp: result.confirmed_ap,
@@ -233,6 +289,54 @@ function createNavigationService(dependencies) {
       session: publicSession(updated),
       positioning: result
     };
+  }
+
+  async function submitProgress(sessionId, clientId, input) {
+    const session = await requireOwnedSession(sessionId, clientId, false);
+    const stepsDelta = Number(input && input.steps_delta);
+    const strideLength = Number(input && input.stride_length);
+    const timestamp = input && input.timestamp ? new Date(input.timestamp) : clock();
+    if (!Number.isInteger(stepsDelta) || stepsDelta <= 0 || stepsDelta > 30 ||
+        !Number.isFinite(strideLength) || strideLength < 0.35 || strideLength > 1.2 ||
+        Number.isNaN(timestamp.getTime())) {
+      throw serviceError(400, 'INVALID_PROGRESS', 'steps_delta, stride_length and timestamp are invalid');
+    }
+    const distance = Math.min(20, stepsDelta * strideLength);
+    const progressInput = { distance_meters: distance };
+    let result;
+    try {
+      result = await positioning.advanceProgress(session.sessionId, progressInput);
+    } catch (cause) {
+      if (cause && cause.code === 'POSITIONING_SESSION_NOT_FOUND') {
+        if (typeof positioning.configure === 'function') {
+          await positioning.configure(await catalog.snapshot());
+        }
+        await positioning.createSession({
+          session_id: session.sessionId,
+          client_id: session.clientId,
+          destination_id: session.destinationId,
+          start_position: session.estimatedPosition || session.startPosition
+        });
+        result = await positioning.advanceProgress(session.sessionId, progressInput);
+      } else {
+        throw cause;
+      }
+    }
+    const updated = await repository.updateSession(session.sessionId, {
+      estimatedPosition: result.estimated_position,
+      positionSource: result.position_source,
+      route: result.route || [],
+      routeVersion: (session.routeVersion || 0) + 1,
+      totalSteps: (session.totalSteps || 0) + stepsDelta,
+      strideLength,
+      distanceTravelled: result.distance_travelled,
+      lastProgressAt: timestamp
+    });
+    events.emit('navigation:position', {
+      sessionId: session.sessionId,
+      data: publicSession(updated)
+    });
+    return { session: publicSession(updated), progress: result };
   }
 
   async function changeDestination(sessionId, destinationId, clientId) {
@@ -296,6 +400,7 @@ function createNavigationService(dependencies) {
     createSession,
     getSession,
     submitObservation,
+    submitProgress,
     changeDestination,
     completeSession,
     listObservations,

@@ -7,6 +7,7 @@ import 'package:mfuguide/floor_plan_coordinates.dart';
 import 'package:mfuguide/navigation_api.dart';
 import 'package:mfuguide/user_page_header.dart';
 import 'package:mfuguide/connected_wifi_service.dart';
+import 'package:mfuguide/step_counter_service.dart';
 
 class MapStartPage extends StatefulWidget {
   final String currentLanguage;
@@ -32,9 +33,14 @@ class _MapStartPageState extends State<MapStartPage> {
   final Color _burgundy = const Color(0xFF8B0000);
   final NavigationApi _navigationApi = NavigationApi();
   final ConnectedWifiService _wifiService = ConnectedWifiService();
+  final StepCounterService _stepCounterService = StepCounterService();
   Timer? _wifiTimer;
+  Timer? _progressTimer;
   bool _readingWifi = false;
-  final Map<String, List<int>> _rssiWindows = {};
+  bool _submittingProgress = false;
+  bool _waitingForPosition = true;
+  int _wifiReadAttempts = 0;
+  int _completeFingerprintReadings = 0;
   bool _showObstacleAlert = false;
   bool _isLoading = true;
   bool _stopping = false;
@@ -44,10 +50,28 @@ class _MapStartPageState extends State<MapStartPage> {
   Map<String, dynamic>? _session;
   int? _lastRouteVersion;
   bool _arrived = false;
+  int? _lastTotalSteps;
+  DateTime? _walkingUntil;
+
+  static const Duration _walkingGracePeriod = Duration(seconds: 2);
+  static const double _walkingSpeedMetersPerSecond = 1.1;
 
   late String _language;
 
   String t(String en, String th) => _language == 'EN' ? en : th;
+
+  double get _positionUncertaintyMeters {
+    final band = _session?['signal_band']?.toString();
+    final confidence = _session?['confidence']?.toString();
+    var radius = switch (band) {
+      'near' => 2.5,
+      'medium' => 4.0,
+      'edge' => 6.0,
+      _ => 6.0,
+    };
+    if (confidence == 'low') radius += 1.5;
+    return radius;
+  }
 
   @override
   void initState() {
@@ -65,6 +89,11 @@ class _MapStartPageState extends State<MapStartPage> {
   Future<void> _startNavigation() async {
     setState(() {
       _isLoading = true;
+      _waitingForPosition = true;
+      _wifiReadAttempts = 0;
+      _completeFingerprintReadings = 0;
+      _lastTotalSteps = null;
+      _walkingUntil = null;
       _error = null;
     });
     try {
@@ -72,6 +101,8 @@ class _MapStartPageState extends State<MapStartPage> {
         final created = await _navigationApi.createSession(
           clientId: _clientId,
           destinationId: widget.destinationId,
+          // Let the first live Wi-Fi observation determine the start zone.
+          startPosition: null,
         );
         _sessionId = created['session_id']?.toString();
       }
@@ -82,7 +113,7 @@ class _MapStartPageState extends State<MapStartPage> {
       }
       await _readAndSubmitWifi();
       _wifiTimer = Timer.periodic(
-        const Duration(seconds: 2),
+        const Duration(seconds: 1),
         (_) => _readAndSubmitWifi(),
       );
       /* Legacy scripted simulator observations removed from the runtime flow.
@@ -142,17 +173,17 @@ class _MapStartPageState extends State<MapStartPage> {
     _readingWifi = true;
     try {
       final reading = await _wifiService.read();
-      final window = _rssiWindows.putIfAbsent(reading.accessPoint, () => []);
-      window.add(reading.rssi);
-      if (window.length > 5) window.removeAt(0);
-      final sorted = [...window]..sort();
-      final median = sorted.length.isOdd
-          ? sorted[sorted.length ~/ 2].toDouble()
-          : (sorted[sorted.length ~/ 2 - 1] + sorted[sorted.length ~/ 2]) / 2;
+      _wifiReadAttempts++;
+      if (reading.accessPointRssi.length == 3) {
+        _completeFingerprintReadings++;
+      } else {
+        _completeFingerprintReadings = 0;
+      }
       final result = await _navigationApi.submitMobileObservation(
         clientId: _clientId,
         associatedAp: reading.accessPoint,
-        rssi: median,
+        rssi: reading.rssi,
+        accessPointRssi: reading.accessPointRssi,
       );
       final current = (result['session'] as Map?)?.cast<String, dynamic>();
       if (!mounted || current == null) return;
@@ -161,12 +192,18 @@ class _MapStartPageState extends State<MapStartPage> {
           _lastRouteVersion != null &&
           routeVersion != null &&
           routeVersion > _lastRouteVersion!;
+      final wasWaitingForPosition = _waitingForPosition;
       setState(() {
         _session = current;
         _lastRouteVersion = routeVersion;
         _isLoading = false;
+        _waitingForPosition =
+            _completeFingerprintReadings < 3 && _wifiReadAttempts < 8;
         _error = null;
       });
+      if (wasWaitingForPosition && !_waitingForPosition) {
+        _startAutomaticNavigation();
+      }
       if (rerouted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -184,6 +221,7 @@ class _MapStartPageState extends State<MapStartPage> {
         setState(() {
           _error = error.message;
           _isLoading = false;
+          _waitingForPosition = false;
         });
       }
     } on NavigationApiException catch (error) {
@@ -191,10 +229,85 @@ class _MapStartPageState extends State<MapStartPage> {
         setState(() {
           _error = error.message;
           _isLoading = false;
+          _waitingForPosition = false;
         });
       }
     } finally {
       _readingWifi = false;
+    }
+  }
+
+  void _startAutomaticNavigation() {
+    if (_progressTimer != null || _stopping || _arrived) return;
+    unawaited(_advanceAutomaticProgress());
+    _progressTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _advanceAutomaticProgress(),
+    );
+  }
+
+  Future<void> _advanceAutomaticProgress() async {
+    if (_submittingProgress ||
+        _stopping ||
+        _arrived ||
+        _waitingForPosition ||
+        _sessionId == null ||
+        !mounted) {
+      return;
+    }
+    final route = (_session?['route'] as List?) ?? const [];
+    if (route.length < 2) return;
+
+    // Step Counter is used only as a walking/stopped detector. Distance still
+    // advances at a stable walking speed, which keeps the marker smoother than
+    // converting every individual step into distance.
+    try {
+      final totalSteps = await _stepCounterService.readTotalSteps();
+      final previousSteps = _lastTotalSteps;
+      _lastTotalSteps = totalSteps;
+      if (previousSteps == null) return;
+      if (totalSteps > previousSteps) {
+        _walkingUntil = DateTime.now().add(_walkingGracePeriod);
+      }
+    } on StepCounterException catch (error) {
+      if (error.code == 'STEP_COUNTER_STARTING') return;
+      _walkingUntil = null;
+      return;
+    } on TimeoutException {
+      _walkingUntil = null;
+      return;
+    }
+
+    final walkingUntil = _walkingUntil;
+    if (walkingUntil == null || DateTime.now().isAfter(walkingUntil)) return;
+
+    _submittingProgress = true;
+    try {
+      final result = await _navigationApi.submitProgress(
+        sessionId: _sessionId!,
+        clientId: _clientId,
+        stepsDelta: 1,
+        strideLength: _walkingSpeedMetersPerSecond,
+      );
+      final current = (result['session'] as Map?)?.cast<String, dynamic>();
+      final progress = (result['progress'] as Map?)?.cast<String, dynamic>();
+      if (!mounted || current == null) return;
+      setState(() {
+        _session = current;
+        _lastRouteVersion = (current['route_version'] as num?)?.toInt();
+        _error = null;
+      });
+      if (progress?['arrived'] == true) {
+        _progressTimer?.cancel();
+        _progressTimer = null;
+        await _completeArrival();
+      }
+    } on NavigationApiException catch (error) {
+      if (mounted) {
+        setState(() => _error = error.message);
+      }
+    } finally {
+      _submittingProgress = false;
     }
   }
 
@@ -203,6 +316,8 @@ class _MapStartPageState extends State<MapStartPage> {
   Future<void> _completeArrival() async {
     if (_arrived || _stopping || _sessionId == null) return;
     _arrived = true;
+    _wifiTimer?.cancel();
+    _progressTimer?.cancel();
     try {
       final completed = await _navigationApi.completeSession(
         sessionId: _sessionId!,
@@ -274,6 +389,7 @@ class _MapStartPageState extends State<MapStartPage> {
 
   Future<void> _closeNavigation() async {
     _stopping = true;
+    _progressTimer?.cancel();
     final sessionId = _sessionId;
     if (sessionId != null) {
       try {
@@ -297,6 +413,7 @@ class _MapStartPageState extends State<MapStartPage> {
   @override
   void dispose() {
     _wifiTimer?.cancel();
+    _progressTimer?.cancel();
     _navigationApi.close();
     super.dispose();
   }
@@ -400,6 +517,7 @@ class _MapStartPageState extends State<MapStartPage> {
                           .whereType<Map>()
                           .toList(),
                       currentPosition: _session?['estimated_position'] as Map?,
+                      uncertaintyMeters: _positionUncertaintyMeters,
                     ),
                     if (_error != null)
                       Center(
@@ -460,6 +578,122 @@ class _MapStartPageState extends State<MapStartPage> {
           ),
           if (_showObstacleAlert) _buildObstacleAlert(),
           Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomBar()),
+          if (_waitingForPosition && _error == null)
+            Positioned.fill(child: _buildPositionLoadingOverlay()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPositionLoadingOverlay() {
+    return ColoredBox(
+      color: const Color(0xFFE9C5C5),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Opacity(
+            opacity: 0.16,
+            child: Image.asset(
+              'assets/welcome-background.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
+          ),
+          const ColoredBox(color: Color(0x77F3DADA)),
+          SafeArea(
+            child: Center(
+              child: Transform.translate(
+                offset: const Offset(0, -30),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 92,
+                      height: 118,
+                      child: Stack(
+                        alignment: Alignment.topCenter,
+                        children: [
+                          Positioned(
+                            bottom: 2,
+                            child: Container(
+                              width: 60,
+                              height: 13,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.location_on_rounded,
+                            color: Color(0xFFFF3D32),
+                            size: 112,
+                          ),
+                          const Positioned(
+                            top: 24,
+                            child: CircleAvatar(
+                              radius: 14,
+                              backgroundColor: Color(0xFFD92222),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'MFU',
+                      style: TextStyle(
+                        color: _burgundy,
+                        fontSize: 33,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 11),
+                    Text(
+                      'SmartGuide',
+                      style: TextStyle(
+                        color: _burgundy,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 27),
+                    Text(
+                      t(
+                        'Detecting your location...',
+                        'กำลังระบุตำแหน่งของคุณ...',
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFF272323),
+                        fontSize: 16,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      t(
+                        'Please remain still for a moment',
+                        'กรุณายืนรอสักครู่',
+                      ),
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: 160,
+                      child: LinearProgressIndicator(
+                        value: (_completeFingerprintReadings / 3).clamp(0, 1),
+                        minHeight: 7,
+                        borderRadius: BorderRadius.circular(99),
+                        color: _burgundy,
+                        backgroundColor: Colors.white.withValues(alpha: 0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -671,7 +905,8 @@ class _MapStartPageState extends State<MapStartPage> {
     final displayedPositionText = position == null
         ? positionText
         : '${_remainingDistance.toStringAsFixed(1)} m remaining • '
-              '${route.length} waypoints';
+              '${route.length} waypoints • '
+              '±${_positionUncertaintyMeters.toStringAsFixed(1)} m';
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -726,10 +961,12 @@ class _MapStartPageState extends State<MapStartPage> {
 class _FollowNavigationMap extends StatefulWidget {
   final List<Map> route;
   final Map? currentPosition;
+  final double uncertaintyMeters;
 
   const _FollowNavigationMap({
     required this.route,
     required this.currentPosition,
+    required this.uncertaintyMeters,
   });
 
   @override
@@ -738,12 +975,14 @@ class _FollowNavigationMap extends StatefulWidget {
 
 class _FollowNavigationMapState extends State<_FollowNavigationMap>
     with TickerProviderStateMixin {
+  static const double _estimatedWalkingSpeedMetersPerSecond = 1.1;
   final TransformationController _transformController =
       TransformationController();
   late final AnimationController _cameraController;
   late final AnimationController _markerController;
   Animation<Matrix4>? _cameraAnimation;
   Animation<Offset>? _markerAnimation;
+  List<Offset> _movementPath = const [];
   Size _viewportSize = Size.zero;
 
   @override
@@ -757,10 +996,11 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
           final animation = _cameraAnimation;
           if (animation != null) _transformController.value = animation.value;
         });
-    _markerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 650),
-    );
+    _markerController = AnimationController(vsync: this)
+      ..addListener(() {
+        final position = _markerAnimation?.value;
+        if (position != null) _followMeters(position, animate: false);
+      });
     WidgetsBinding.instance.addPostFrameCallback((_) => _followUser());
   }
 
@@ -775,43 +1015,175 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
           (current!['x'] as num).toDouble(),
           (current['y'] as num).toDouble(),
         );
-        final begin = old?['x'] is num && old?['y'] is num
-            ? Offset(
-                (old!['x'] as num).toDouble(),
-                (old['y'] as num).toDouble(),
-              )
-            : end;
-        _markerAnimation = Tween<Offset>(begin: begin, end: end).animate(
+        // If a new Wi-Fi update arrives while the marker is moving, continue
+        // from the currently visible point instead of jumping to the previous
+        // target.
+        final visible = _markerAnimation?.value;
+        final begin = visible ??
+            (old?['x'] is num && old?['y'] is num
+                ? Offset(
+                    (old!['x'] as num).toDouble(),
+                    (old['y'] as num).toDouble(),
+                  )
+                : end);
+        _movementPath = _pathToNewZone(
+          begin: begin,
+          end: end,
+          previousRoute: oldWidget.route,
+        );
+        final distanceMeters = _polylineLength(_movementPath);
+        final travelMilliseconds = math.max(
+          350,
+          math.min(
+            30000,
+            (distanceMeters /
+                    _estimatedWalkingSpeedMetersPerSecond *
+                    1000)
+                .round(),
+          ),
+        );
+        _markerController.duration = Duration(
+          milliseconds: travelMilliseconds,
+        );
+        _markerAnimation = _PolylineTween(_movementPath).animate(
           CurvedAnimation(
             parent: _markerController,
-            curve: Curves.easeInOutCubic,
+            curve: Curves.linear,
           ),
         );
         _markerController.forward(from: 0);
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) => _followUser());
+      // The marker listener keeps the camera centred while travelling. Do not
+      // pan to the new zone anchor before the marker has reached it.
+      if (_markerAnimation == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _followUser());
+      }
     }
   }
 
-  Offset? _positionOnCanvas() {
-    final current = widget.currentPosition;
-    if (current == null ||
-        current['x'] is! num ||
-        current['y'] is! num ||
-        _viewportSize.isEmpty) {
-      return null;
+  List<Offset> _pathToNewZone({
+    required Offset begin,
+    required Offset end,
+    required List<Map> previousRoute,
+  }) {
+    final candidates = previousRoute
+        .where((point) => point['x'] is num && point['y'] is num)
+        .map(
+          (point) => Offset(
+            (point['x'] as num).toDouble(),
+            (point['y'] as num).toDouble(),
+          ),
+        )
+        .toList();
+    if (candidates.isEmpty) return [begin, end];
+
+    var closestIndex = 0;
+    var closestDistance = double.infinity;
+    for (var index = 0; index < candidates.length; index++) {
+      final distance = (candidates[index] - end).distance;
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = index;
+      }
     }
-    return FloorPlanCoordinates.metersToCanvas(
-      (current['x'] as num).toDouble(),
-      (current['y'] as num).toDouble(),
-      _viewportSize,
-    );
+
+    final path = <Offset>[begin];
+    for (var index = 0; index <= closestIndex; index++) {
+      if ((candidates[index] - path.last).distance > 0.01) {
+        path.add(candidates[index]);
+      }
+    }
+    if ((end - path.last).distance > 0.01) path.add(end);
+
+    // If the previous route does not pass near the newly detected zone,
+    // avoid a long detour and fall back to a direct visual transition.
+    final directDistance = (end - begin).distance;
+    if (closestDistance > 1.5 ||
+        _polylineLength(path) > directDistance * 2 + 2) {
+      return [begin, end];
+    }
+    return path;
+  }
+
+  double _polylineLength(List<Offset> points) {
+    var total = 0.0;
+    for (var index = 1; index < points.length; index++) {
+      total += (points[index] - points[index - 1]).distance;
+    }
+    return total;
+  }
+
+  List<Map> _displayRoute(Offset? current, double progress) {
+    if (current == null || _movementPath.length < 2 || progress >= 1) {
+      return widget.route;
+    }
+
+    // Consume exactly the same distance along the movement polyline as the
+    // marker animation. This makes the travelled blue segment disappear
+    // continuously instead of jumping only when a waypoint is reached.
+    final totalLength = _polylineLength(_movementPath);
+    var consumed = totalLength * progress.clamp(0.0, 1.0);
+    var nextPointIndex = 1;
+    while (nextPointIndex < _movementPath.length) {
+      final segmentLength =
+          (_movementPath[nextPointIndex] -
+                  _movementPath[nextPointIndex - 1])
+              .distance;
+      if (consumed < segmentLength) break;
+      consumed -= segmentLength;
+      nextPointIndex++;
+    }
+
+    final result = <Map>[];
+    for (final point in _movementPath.skip(nextPointIndex)) {
+      result.add({'x': point.dx, 'y': point.dy});
+    }
+    for (final point in widget.route) {
+      final duplicate = result.isNotEmpty &&
+          result.last['x'] is num &&
+          result.last['y'] is num &&
+          point['x'] is num &&
+          point['y'] is num &&
+          math.sqrt(
+                math.pow(
+                      (result.last['x'] as num).toDouble() -
+                          (point['x'] as num).toDouble(),
+                      2,
+                    ) +
+                    math.pow(
+                      (result.last['y'] as num).toDouble() -
+                          (point['y'] as num).toDouble(),
+                      2,
+                    ),
+              ) <
+              0.01;
+      if (!duplicate) {
+        result.add(point);
+      }
+    }
+    return result;
   }
 
   void _followUser() {
     if (!mounted) return;
-    final point = _positionOnCanvas();
-    if (point == null) return;
+    final current = widget.currentPosition;
+    if (current == null || current['x'] is! num || current['y'] is! num) return;
+    _followMeters(
+      Offset(
+        (current['x'] as num).toDouble(),
+        (current['y'] as num).toDouble(),
+      ),
+      animate: true,
+    );
+  }
+
+  void _followMeters(Offset meters, {required bool animate}) {
+    if (!mounted || _viewportSize.isEmpty) return;
+    final point = FloorPlanCoordinates.metersToCanvas(
+      meters.dx,
+      meters.dy,
+      _viewportSize,
+    );
     const zoom = 2.8;
     final target = Matrix4.identity()
       ..translateByDouble(
@@ -822,6 +1194,11 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
       )
       ..scaleByDouble(zoom, zoom, 1, 1)
       ..translateByDouble(-point.dx, -point.dy, 0, 1);
+    if (!animate) {
+      _cameraController.stop();
+      _transformController.value = target;
+      return;
+    }
     _cameraAnimation =
         Matrix4Tween(begin: _transformController.value, end: target).animate(
           CurvedAnimation(
@@ -869,8 +1246,12 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
                             : {'x': animated.dx, 'y': animated.dy};
                         return CustomPaint(
                           painter: _NavigationRoutePainter(
-                            route: widget.route,
+                            route: _displayRoute(
+                              animated,
+                              _markerController.value,
+                            ),
                             currentPosition: position,
+                            uncertaintyMeters: widget.uncertaintyMeters,
                           ),
                         );
                       },
@@ -899,13 +1280,51 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
   }
 }
 
+class _PolylineTween extends Animatable<Offset> {
+  final List<Offset> points;
+  late final List<double> _segmentLengths;
+  late final double _totalLength;
+
+  _PolylineTween(List<Offset> source)
+    : points = source.length >= 2 ? source : [source.first, source.first] {
+    _segmentLengths = <double>[];
+    var total = 0.0;
+    for (var index = 1; index < points.length; index++) {
+      final length = (points[index] - points[index - 1]).distance;
+      _segmentLengths.add(length);
+      total += length;
+    }
+    _totalLength = total;
+  }
+
+  @override
+  Offset transform(double t) {
+    if (_totalLength <= 0 || t >= 1) return points.last;
+    var remaining = _totalLength * t.clamp(0.0, 1.0);
+    for (var index = 0; index < _segmentLengths.length; index++) {
+      final length = _segmentLengths[index];
+      if (remaining <= length && length > 0) {
+        return Offset.lerp(
+          points[index],
+          points[index + 1],
+          remaining / length,
+        )!;
+      }
+      remaining -= length;
+    }
+    return points.last;
+  }
+}
+
 class _NavigationRoutePainter extends CustomPainter {
   final List<Map> route;
   final Map? currentPosition;
+  final double uncertaintyMeters;
 
   const _NavigationRoutePainter({
     required this.route,
     required this.currentPosition,
+    required this.uncertaintyMeters,
   });
 
   Offset _toCanvas(double xMeters, double yMeters, Rect imageRect) {
@@ -927,11 +1346,22 @@ class _NavigationRoutePainter extends CustomPainter {
     final imageRect = FloorPlanCoordinates.containedImageRect(size);
     if (route.isNotEmpty) {
       final path = Path();
+      var hasStart = false;
+      final current = currentPosition;
+      if (current != null && current['x'] is num && current['y'] is num) {
+        final start = _toCanvas(
+          (current['x'] as num).toDouble(),
+          (current['y'] as num).toDouble(),
+          imageRect,
+        );
+        path.moveTo(start.dx, start.dy);
+        hasStart = true;
+      }
       for (var index = 0; index < route.length; index++) {
         final x = (route[index]['x'] as num).toDouble();
         final y = (route[index]['y'] as num).toDouble();
         final point = _toCanvas(x, y, imageRect);
-        if (index == 0) {
+        if (index == 0 && !hasStart) {
           path.moveTo(point.dx, point.dy);
         } else {
           path.lineTo(point.dx, point.dy);
@@ -959,10 +1389,33 @@ class _NavigationRoutePainter extends CustomPainter {
     }
     final current = currentPosition;
     if (current != null && current['x'] is num && current['y'] is num) {
+      final currentX = (current['x'] as num).toDouble();
+      final currentY = (current['y'] as num).toDouble();
       final point = _toCanvas(
-        (current['x'] as num).toDouble(),
-        (current['y'] as num).toDouble(),
+        currentX,
+        currentY,
         imageRect,
+      );
+      final radiusPoint = _toCanvas(
+        currentX + uncertaintyMeters,
+        currentY,
+        imageRect,
+      );
+      final radius = (radiusPoint - point).distance;
+      canvas.drawCircle(
+        point,
+        radius,
+        Paint()
+          ..color = Colors.green.withValues(alpha: 0.12)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        point,
+        radius,
+        Paint()
+          ..color = Colors.green.withValues(alpha: 0.45)
+          ..strokeWidth = 1.5
+          ..style = PaintingStyle.stroke,
       );
       canvas.drawCircle(point, 8, Paint()..color = Colors.green);
       canvas.drawCircle(point, 3, Paint()..color = Colors.white);
@@ -972,6 +1425,7 @@ class _NavigationRoutePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _NavigationRoutePainter oldDelegate) {
     return oldDelegate.route != route ||
-        oldDelegate.currentPosition != currentPosition;
+        oldDelegate.currentPosition != currentPosition ||
+        oldDelegate.uncertaintyMeters != uncertaintyMeters;
   }
 }

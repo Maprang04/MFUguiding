@@ -88,11 +88,35 @@ class NavigationApi {
   Future<Map<String, dynamic>> createSession({
     required String clientId,
     required String destinationId,
+    Map<String, num>? startPosition,
+  }) {
+    final body = <String, dynamic>{
+      'client_id': clientId,
+      'destination_id': destinationId,
+    };
+    if (startPosition != null) {
+      body['start_position'] = startPosition;
+      body['start_position_source'] = 'user_selected';
+    }
+    return _request('POST', '/sessions', body: body);
+  }
+
+  Future<Map<String, dynamic>> submitProgress({
+    required String sessionId,
+    required String clientId,
+    required int stepsDelta,
+    required double strideLength,
   }) {
     return _request(
       'POST',
-      '/sessions',
-      body: {'client_id': clientId, 'destination_id': destinationId},
+      '/sessions/${Uri.encodeComponent(sessionId)}/progress',
+      clientId: clientId,
+      body: {
+        'client_id': clientId,
+        'steps_delta': stepsDelta,
+        'stride_length': strideLength,
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+      },
     );
   }
 
@@ -139,6 +163,7 @@ class NavigationApi {
     required String clientId,
     required String associatedAp,
     required num rssi,
+    Map<String, int>? accessPointRssi,
   }) {
     return _request(
       'POST',
@@ -147,6 +172,8 @@ class NavigationApi {
         'client_id': clientId,
         'associated_ap': associatedAp,
         'rssi': rssi,
+        if (accessPointRssi != null && accessPointRssi.isNotEmpty)
+          'rssi_readings': accessPointRssi,
         'timestamp': DateTime.now().toUtc().toIso8601String(),
       },
       clientId: clientId,

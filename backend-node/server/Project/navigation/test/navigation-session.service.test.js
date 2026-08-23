@@ -186,3 +186,60 @@ test('health reports repository and mock positioning readiness', async function 
   assert.equal(health.services.mongodb, 'ok');
   assert.equal(health.services.positioning_engine, 'ok');
 });
+
+test('recreates a positioning session after the Python service restarts', async function () {
+  const repository = memoryRepository();
+  const underlying = new MockPositioningClient(navigationConfig);
+  let failNextObservation = false;
+  let createCount = 0;
+  const positioning = {
+    configure: async () => ({ configured: true }),
+    createSession: async (input) => {
+      createCount += 1;
+      return underlying.createSession(input);
+    },
+    submitObservation: async (sessionId, observation) => {
+      if (failNextObservation) {
+        failNextObservation = false;
+        await underlying.deleteSession(sessionId);
+        const error = new Error('Positioning session not found');
+        error.code = 'POSITIONING_SESSION_NOT_FOUND';
+        throw error;
+      }
+      return underlying.submitObservation(sessionId, observation);
+    }
+  };
+  const service = createService({
+    repository,
+    positioning,
+    events: new EventEmitter()
+  });
+  await service.createSession({ client_id: 'device-recovery', destination_id: 'room_1' });
+  failNextObservation = true;
+  const result = await service.submitObservation({
+    client_id: 'device-recovery',
+    associated_ap: 'AP1',
+    rssi: -60
+  });
+  assert.equal(createCount, 2);
+  assert.equal(result.session.confirmed_ap, 'AP1');
+});
+
+test('moves a selected start forward using step progress', async function () {
+  const context = setup();
+  const created = await context.service.createSession({
+    client_id: 'device-steps',
+    destination_id: 'room_1',
+    start_position: { x: 11, y: 5 },
+    start_position_source: 'user_selected'
+  });
+  const result = await context.service.submitProgress(
+    created.session_id,
+    'device-steps',
+    { steps_delta: 2, stride_length: 0.65 }
+  );
+  assert.equal(result.session.total_steps, 2);
+  assert.equal(result.session.distance_travelled, 1.3);
+  assert.equal(result.session.position_source, 'step_route_progress');
+  assert.deepEqual(result.session.route[0], result.session.estimated_position);
+});

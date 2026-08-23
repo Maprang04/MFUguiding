@@ -15,6 +15,15 @@ class HttpPositioningClient {
       const response = await this.client.request(config);
       return response.data;
     } catch (cause) {
+      const responseError = cause.response && cause.response.data && cause.response.data.error;
+      if (cause.response && cause.response.status === 404 &&
+          responseError && responseError.code === 'SESSION_NOT_FOUND') {
+        const missing = new Error(responseError.message || 'Positioning session not found');
+        missing.code = 'POSITIONING_SESSION_NOT_FOUND';
+        missing.status = 404;
+        missing.cause = cause;
+        throw missing;
+      }
       const error = new Error(
         cause.code === 'ECONNABORTED'
           ? 'Positioning service timed out'
@@ -47,6 +56,13 @@ class HttpPositioningClient {
       method: 'post',
       url: '/sessions/' + encodeURIComponent(sessionId) + '/observations',
       data: observation
+    });
+  }
+  advanceProgress(sessionId, input) {
+    return this._request({
+      method: 'post',
+      url: '/sessions/' + encodeURIComponent(sessionId) + '/progress',
+      data: input
     });
   }
   changeDestination(sessionId, destinationId) {
