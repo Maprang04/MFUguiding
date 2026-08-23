@@ -23,16 +23,22 @@ class CreateSessionRequest(BaseModel):
     session_id: str
     client_id: str
     destination_id: str
+    start_position: dict[str, float] | None = None
 
 
 class ObservationRequest(BaseModel):
     associated_ap: str
     rssi: float
     timestamp: str | None = None
+    rssi_readings: dict[str, float] | None = None
 
 
 class DestinationRequest(BaseModel):
     destination_id: str
+
+
+class ProgressRequest(BaseModel):
+    distance_meters: float
 
 
 class ConfigurationRequest(BaseModel):
@@ -69,7 +75,12 @@ def configure(body: ConfigurationRequest):
 
 @app.post("/sessions", status_code=201)
 def create_session(body: CreateSessionRequest):
-    return service.create_session(body.session_id, body.client_id, body.destination_id)
+    return service.create_session(
+        body.session_id,
+        body.client_id,
+        body.destination_id,
+        body.start_position,
+    )
 
 
 @app.get("/sessions/{session_id}")
@@ -79,7 +90,17 @@ def get_session(session_id: str):
 
 @app.post("/sessions/{session_id}/observations")
 def submit_observation(session_id: str, body: ObservationRequest):
-    return service.submit_observation(session_id, body.associated_ap, body.rssi)
+    return service.submit_observation(
+        session_id,
+        body.associated_ap,
+        body.rssi,
+        body.rssi_readings,
+    )
+
+
+@app.post("/sessions/{session_id}/progress")
+def advance_progress(session_id: str, body: ProgressRequest):
+    return service.advance_progress(session_id, body.distance_meters)
 
 
 @app.patch("/sessions/{session_id}/destination")

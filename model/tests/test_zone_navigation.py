@@ -8,7 +8,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "navigation"))
 
-from astar import FloorGrid, find_path_meters  # noqa: E402
+from astar import (  # noqa: E402
+    FloorGrid,
+    find_path_meters,
+    route_is_walkable,
+    simplify_path,
+)
 from route_visualizer import RouteVisualizer  # noqa: E402
 from positioning.roaming_tracker import RoamingTracker  # noqa: E402
 from positioning.rssi_filter import InvalidRssiError, RssiMedianFilter  # noqa: E402
@@ -55,6 +60,41 @@ class RoamingTrackerTests(unittest.TestCase):
             result = tracker.update("user", ap)
         self.assertEqual(result.current_ap, "AP3")
         self.assertFalse(result.roaming_confirmed)
+
+    def test_quick_reverse_roam_requires_extra_confirmation(self):
+        tracker = RoamingTracker(
+            required_confirmations=3,
+            reverse_confirmations=5,
+            reverse_guard_observations=8,
+        )
+        tracker.update("user", "AP3")
+        tracker.update("user", "AP2")
+        tracker.update("user", "AP2")
+        self.assertTrue(tracker.update("user", "AP2").roaming_confirmed)
+
+        for _ in range(4):
+            result = tracker.update("user", "AP3")
+            self.assertFalse(result.roaming_confirmed)
+            self.assertEqual(result.current_ap, "AP2")
+        result = tracker.update("user", "AP3")
+        self.assertTrue(result.roaming_confirmed)
+        self.assertEqual(result.current_ap, "AP3")
+
+    def test_reverse_after_guard_uses_normal_confirmation_count(self):
+        tracker = RoamingTracker(
+            required_confirmations=3,
+            reverse_confirmations=5,
+            reverse_guard_observations=3,
+        )
+        tracker.update("user", "AP3")
+        tracker.update("user", "AP2")
+        tracker.update("user", "AP2")
+        self.assertTrue(tracker.update("user", "AP2").roaming_confirmed)
+        for _ in range(4):
+            tracker.update("user", "AP2")
+        self.assertFalse(tracker.update("user", "AP3").roaming_confirmed)
+        self.assertFalse(tracker.update("user", "AP3").roaming_confirmed)
+        self.assertTrue(tracker.update("user", "AP3").roaming_confirmed)
 
 
 class ZoneEstimatorTests(unittest.TestCase):
@@ -108,6 +148,20 @@ class ConfigurationNavigationTests(unittest.TestCase):
             output = visualizer.save(route, Path(directory) / "route.png", "Room 2")
             self.assertTrue(output.exists())
             self.assertGreater(output.stat().st_size, 0)
+
+    def test_all_configured_routes_and_simplified_segments_avoid_walls(self):
+        destinations = self.config["destinations"].values()
+        for ap in self.config["ap_zones"].values():
+            for anchor in ap["anchors"].values():
+                for destination in destinations:
+                    with self.subTest(anchor=anchor, destination=destination["position"]):
+                        route = find_path_meters(
+                            self.grid, anchor, destination["position"]
+                        )
+                        self.assertIsNotNone(route)
+                        self.assertTrue(route_is_walkable(self.grid, route))
+                        simplified = simplify_path(route)
+                        self.assertTrue(route_is_walkable(self.grid, simplified))
 
 
 if __name__ == "__main__":

@@ -7,7 +7,20 @@
     "medium_min": -70
   },
   "roaming": {
-    "required_confirmations": 3
+    "required_confirmations": 3,
+    "reverse_confirmations": 5,
+    "reverse_guard_observations": 8
+  },
+  "positioning": {
+    "stable_zone_navigation": false,
+    "band_confirmations": 3,
+    "fingerprint_zone_confirmations": 3,
+    "max_fingerprint_update_m": 0.75,
+    "min_fingerprint_update_m": 0.2,
+    "route_snap_tolerance_m": 1.5,
+    "arrival_guard_radius_m": 1.5,
+    "arrival_confirmations": 3,
+    "calibrated_fingerprints": []
   },
   "ap_zones": {
     "AP1": {

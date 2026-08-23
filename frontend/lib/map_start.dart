@@ -7,7 +7,6 @@ import 'package:mfuguide/floor_plan_coordinates.dart';
 import 'package:mfuguide/navigation_api.dart';
 import 'package:mfuguide/user_page_header.dart';
 import 'package:mfuguide/connected_wifi_service.dart';
-import 'package:mfuguide/step_counter_service.dart';
 
 class MapStartPage extends StatefulWidget {
   final String currentLanguage;
@@ -33,11 +32,8 @@ class _MapStartPageState extends State<MapStartPage> {
   final Color _burgundy = const Color(0xFF8B0000);
   final NavigationApi _navigationApi = NavigationApi();
   final ConnectedWifiService _wifiService = ConnectedWifiService();
-  final StepCounterService _stepCounterService = StepCounterService();
   Timer? _wifiTimer;
-  Timer? _progressTimer;
   bool _readingWifi = false;
-  bool _submittingProgress = false;
   bool _waitingForPosition = true;
   int _wifiReadAttempts = 0;
   int _completeFingerprintReadings = 0;
@@ -50,11 +46,6 @@ class _MapStartPageState extends State<MapStartPage> {
   Map<String, dynamic>? _session;
   int? _lastRouteVersion;
   bool _arrived = false;
-  int? _lastTotalSteps;
-  DateTime? _walkingUntil;
-
-  static const Duration _walkingGracePeriod = Duration(seconds: 2);
-  static const double _walkingSpeedMetersPerSecond = 1.1;
 
   late String _language;
 
@@ -92,8 +83,6 @@ class _MapStartPageState extends State<MapStartPage> {
       _waitingForPosition = true;
       _wifiReadAttempts = 0;
       _completeFingerprintReadings = 0;
-      _lastTotalSteps = null;
-      _walkingUntil = null;
       _error = null;
     });
     try {
@@ -192,7 +181,6 @@ class _MapStartPageState extends State<MapStartPage> {
           _lastRouteVersion != null &&
           routeVersion != null &&
           routeVersion > _lastRouteVersion!;
-      final wasWaitingForPosition = _waitingForPosition;
       setState(() {
         _session = current;
         _lastRouteVersion = routeVersion;
@@ -201,9 +189,6 @@ class _MapStartPageState extends State<MapStartPage> {
             _completeFingerprintReadings < 3 && _wifiReadAttempts < 8;
         _error = null;
       });
-      if (wasWaitingForPosition && !_waitingForPosition) {
-        _startAutomaticNavigation();
-      }
       if (rerouted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -237,87 +222,12 @@ class _MapStartPageState extends State<MapStartPage> {
     }
   }
 
-  void _startAutomaticNavigation() {
-    if (_progressTimer != null || _stopping || _arrived) return;
-    unawaited(_advanceAutomaticProgress());
-    _progressTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _advanceAutomaticProgress(),
-    );
-  }
-
-  Future<void> _advanceAutomaticProgress() async {
-    if (_submittingProgress ||
-        _stopping ||
-        _arrived ||
-        _waitingForPosition ||
-        _sessionId == null ||
-        !mounted) {
-      return;
-    }
-    final route = (_session?['route'] as List?) ?? const [];
-    if (route.length < 2) return;
-
-    // Step Counter is used only as a walking/stopped detector. Distance still
-    // advances at a stable walking speed, which keeps the marker smoother than
-    // converting every individual step into distance.
-    try {
-      final totalSteps = await _stepCounterService.readTotalSteps();
-      final previousSteps = _lastTotalSteps;
-      _lastTotalSteps = totalSteps;
-      if (previousSteps == null) return;
-      if (totalSteps > previousSteps) {
-        _walkingUntil = DateTime.now().add(_walkingGracePeriod);
-      }
-    } on StepCounterException catch (error) {
-      if (error.code == 'STEP_COUNTER_STARTING') return;
-      _walkingUntil = null;
-      return;
-    } on TimeoutException {
-      _walkingUntil = null;
-      return;
-    }
-
-    final walkingUntil = _walkingUntil;
-    if (walkingUntil == null || DateTime.now().isAfter(walkingUntil)) return;
-
-    _submittingProgress = true;
-    try {
-      final result = await _navigationApi.submitProgress(
-        sessionId: _sessionId!,
-        clientId: _clientId,
-        stepsDelta: 1,
-        strideLength: _walkingSpeedMetersPerSecond,
-      );
-      final current = (result['session'] as Map?)?.cast<String, dynamic>();
-      final progress = (result['progress'] as Map?)?.cast<String, dynamic>();
-      if (!mounted || current == null) return;
-      setState(() {
-        _session = current;
-        _lastRouteVersion = (current['route_version'] as num?)?.toInt();
-        _error = null;
-      });
-      if (progress?['arrived'] == true) {
-        _progressTimer?.cancel();
-        _progressTimer = null;
-        await _completeArrival();
-      }
-    } on NavigationApiException catch (error) {
-      if (mounted) {
-        setState(() => _error = error.message);
-      }
-    } finally {
-      _submittingProgress = false;
-    }
-  }
-
   // Retained for the explicit arrival action that will be wired to a room beacon/QR.
   // ignore: unused_element
   Future<void> _completeArrival() async {
     if (_arrived || _stopping || _sessionId == null) return;
     _arrived = true;
     _wifiTimer?.cancel();
-    _progressTimer?.cancel();
     try {
       final completed = await _navigationApi.completeSession(
         sessionId: _sessionId!,
@@ -389,7 +299,6 @@ class _MapStartPageState extends State<MapStartPage> {
 
   Future<void> _closeNavigation() async {
     _stopping = true;
-    _progressTimer?.cancel();
     final sessionId = _sessionId;
     if (sessionId != null) {
       try {
@@ -413,7 +322,6 @@ class _MapStartPageState extends State<MapStartPage> {
   @override
   void dispose() {
     _wifiTimer?.cancel();
-    _progressTimer?.cancel();
     _navigationApi.close();
     super.dispose();
   }
@@ -1066,6 +974,13 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
     required Offset end,
     required List<Map> previousRoute,
   }) {
+    // Normal walking progress arrives about once per second and advances only
+    // 1.1 m. It is already constrained to the current route by the model, so
+    // animate directly to that point. Rebuilding a path through old waypoints
+    // here can briefly pull the marker/blue line backwards and look like a
+    // route jump.
+    if ((end - begin).distance <= 1.5) return [begin, end];
+
     final candidates = previousRoute
         .where((point) => point['x'] is num && point['y'] is num)
         .map(

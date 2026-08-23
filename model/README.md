@@ -190,7 +190,7 @@ Test the loader from the `model` directory:
 The expected source in the output is
 `MongoDB (indoor_navigation/wifi_fingerprints)`.
 
-The controller-independent MVP reads simulated observations from
+The mobile Wi-Fi MVP reads simulated observations from
 `simulator/observations.json`, confirms roaming after three consecutive
 readings, estimates an AP zone, and recalculates an A* route on each
 confirmed roaming event.
@@ -206,7 +206,7 @@ Each route calculation also creates a floor-plan image in
 is the A* route, and the red marker is the selected room entrance.
 
 Available destinations are `room_1`, `room_2`, and `room_3`. To try other
-controller readings, edit `simulator/observations.json`. Each observation
+mobile Wi-Fi readings, edit `simulator/observations.json`. Each observation
 must contain `client_id`, `associated_ap`, `rssi`, and `timestamp`.
 
 Run the tests:

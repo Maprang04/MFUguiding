@@ -1,4 +1,4 @@
-"""End-to-end zone navigation demo using simulated controller observations."""
+"""End-to-end zone navigation demo using simulated mobile Wi-Fi observations."""
 
 import argparse
 import json

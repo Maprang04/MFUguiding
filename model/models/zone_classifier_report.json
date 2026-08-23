@@ -1,0 +1,15 @@
+{
+  "samples": 176,
+  "class_counts": {
+    "CENTRAL_HALLWAY": 74,
+    "LEFT_WING": 50,
+    "RIGHT_WING": 52
+  },
+  "cross_validation_accuracy_mean": 0.7100000000000001,
+  "cross_validation_accuracy_std": 0.03487587318781058,
+  "features": [
+    "associated_ap",
+    "median_rssi"
+  ],
+  "note": "Zone labels are derived from existing fingerprint x coordinates; no new collection was used."
+}

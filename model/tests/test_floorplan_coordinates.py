@@ -8,7 +8,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 
 KNOWN_LOCATIONS = {
-    "AP1": (16.25, 11.75),
+    "AP1": (17.0, 5.0),
     "AP2": (10.5, 9.75),
     "AP3": (2.0, 0.5),
     "Room 1 entrance": (15.0, 5.0),

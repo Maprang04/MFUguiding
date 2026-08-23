@@ -31,15 +31,15 @@ class MainActivity : FlutterActivity(), SensorEventListener {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "getConnectedWifi" -> {
-                        if (hasRequiredPermissions()) result.success(readConnectedWifi())
+                        if (hasRequiredPermissions(call.method)) result.success(readConnectedWifi())
                         else requestRequiredPermissions(call.method, result)
                     }
                     "getWifiScan" -> {
-                        if (hasRequiredPermissions()) result.success(readWifiScan())
+                        if (hasRequiredPermissions(call.method)) result.success(readWifiScan())
                         else requestRequiredPermissions(call.method, result)
                     }
                     "getStepCount" -> {
-                        if (hasRequiredPermissions()) readStepCount(result)
+                        if (hasRequiredPermissions(call.method)) readStepCount(result)
                         else requestRequiredPermissions(call.method, result)
                     }
                     else -> result.notImplemented()
@@ -54,21 +54,21 @@ class MainActivity : FlutterActivity(), SensorEventListener {
         }
         pendingResult = result
         pendingMethod = method
-        requestPermissions(requiredPermissions(), permissionRequestCode)
+        requestPermissions(requiredPermissions(method), permissionRequestCode)
     }
 
-    private fun requiredPermissions(): Array<String> {
+    private fun requiredPermissions(method: String? = null): Array<String> {
         val values = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             values.add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (method == "getStepCount" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             values.add(Manifest.permission.ACTIVITY_RECOGNITION)
         }
         return values.toTypedArray()
     }
 
-    private fun hasRequiredPermissions() = requiredPermissions().all {
+    private fun hasRequiredPermissions(method: String? = null) = requiredPermissions(method).all {
         checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -146,8 +146,8 @@ class MainActivity : FlutterActivity(), SensorEventListener {
         val method = pendingMethod
         pendingResult = null
         pendingMethod = null
-        if (!hasRequiredPermissions()) {
-            result.error("SENSOR_PERMISSION_DENIED", "Wi-Fi, location and activity permissions are required.", null)
+        if (!hasRequiredPermissions(method)) {
+            result.error("SENSOR_PERMISSION_DENIED", "The required Wi-Fi or sensor permission was denied.", null)
         } else if (method == "getStepCount") {
             startStepSensor()
             readStepCount(result)

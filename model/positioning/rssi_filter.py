@@ -1,11 +1,11 @@
-"""Validation and median filtering for controller RSSI observations."""
+"""Validation and median filtering for mobile Wi-Fi RSSI observations."""
 
 from collections import defaultdict, deque
 from statistics import median
 
 
 class InvalidRssiError(ValueError):
-    """Raised when a controller observation does not contain usable RSSI."""
+    """Raised when a Wi-Fi observation does not contain usable RSSI."""
 
 
 class RssiMedianFilter:

@@ -89,9 +89,11 @@ def astar(grid: FloorGrid, start_cell, goal_cell):
             neighbor = (current[0] + dr, current[1] + dc)
             if not grid.is_walkable(*neighbor):
                 continue
-            # prevent cutting across a diagonal gap between two blocked cells
+            # A diagonal step is safe only when both side-adjacent cells are
+            # walkable. Requiring just one free side lets the rendered route
+            # clip through the corner of a wall.
             if dr != 0 and dc != 0:
-                if not grid.is_walkable(current[0] + dr, current[1]) and \
+                if not grid.is_walkable(current[0] + dr, current[1]) or \
                    not grid.is_walkable(current[0], current[1] + dc):
                     continue
             step_cost = (dr ** 2 + dc ** 2) ** 0.5
@@ -133,6 +135,48 @@ def simplify_path(waypoints, tol=1e-6):
             out.append(waypoints[i])
     out.append(waypoints[-1])
     return out
+
+
+def segment_is_walkable(grid: FloorGrid, start_xy, end_xy):
+    """Return True only when the complete rendered segment is collision-free.
+
+    Sampling more finely than a grid cell catches a simplified line entering
+    a blocked cell. Cell transitions are checked separately to reject diagonal
+    corner cutting even when a sample lands exactly on a cell boundary.
+    """
+    dx = float(end_xy[0]) - float(start_xy[0])
+    dy = float(end_xy[1]) - float(start_xy[1])
+    distance = (dx * dx + dy * dy) ** 0.5
+    steps = max(1, int(np.ceil(distance / (grid.cell_size / 4.0))))
+    previous = None
+    for index in range(steps + 1):
+        ratio = index / steps
+        cell = grid.meter_to_cell(
+            float(start_xy[0]) + dx * ratio,
+            float(start_xy[1]) + dy * ratio,
+        )
+        if not grid.is_walkable(*cell):
+            return False
+        if previous is not None:
+            dr = cell[0] - previous[0]
+            dc = cell[1] - previous[1]
+            if abs(dr) > 1 or abs(dc) > 1:
+                return False
+            if dr != 0 and dc != 0:
+                if not grid.is_walkable(previous[0] + dr, previous[1]) or \
+                   not grid.is_walkable(previous[0], previous[1] + dc):
+                    return False
+        previous = cell
+    return True
+
+
+def route_is_walkable(grid: FloorGrid, waypoints):
+    if not waypoints:
+        return False
+    return all(
+        segment_is_walkable(grid, waypoints[index - 1], waypoints[index])
+        for index in range(1, len(waypoints))
+    )
 
 
 if __name__ == "__main__":
