@@ -15,6 +15,7 @@ const accessPointSchema = new Schema({
   bssid: { type: String, default: null, sparse: true, index: true, trim: true },
   position: { type: pointSchema, required: true },
   zoneId: { type: String, required: true, index: true, trim: true },
+  startAnchor: { type: pointSchema, required: true },
   anchors: {
     near: { type: pointSchema, required: true },
     medium: { type: pointSchema, required: true },

@@ -104,6 +104,7 @@ const accessPoints = [
     floorId: 'floor-1',
     position: { x: 17, y: 5 },
     zoneId: 'RIGHT_WING',
+    startAnchor: { x: 15, y: 6 },
     anchors: {
       near: { x: 16.125, y: 8.125 },
       medium: { x: 15.125, y: 6.125 },
@@ -116,6 +117,7 @@ const accessPoints = [
     floorId: 'floor-1',
     position: { x: 10.5, y: 9.75 },
     zoneId: 'CENTRAL_HALLWAY',
+    startAnchor: { x: 12, y: 4 },
     anchors: {
       near: { x: 11.125, y: 7.125 },
       medium: { x: 12.125, y: 4.125 },
@@ -128,6 +130,7 @@ const accessPoints = [
     floorId: 'floor-1',
     position: { x: 2, y: 0.5 },
     zoneId: 'LEFT_WING',
+    startAnchor: { x: 6, y: 2 },
     anchors: {
       near: { x: 3.125, y: 2.125 },
       medium: { x: 6.125, y: 2.125 },

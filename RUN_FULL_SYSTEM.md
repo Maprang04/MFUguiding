@@ -158,6 +158,8 @@ C:\Users\araya\Downloads\MFUguiding\frontend\build\app\outputs\flutter-apk\app-r
 4. ใช้ APK ล่าสุดที่มีโค้ดสแกน 3 AP
 5. Android อาจ throttle Wi-Fi scan จึงไม่รับประกันค่าใหม่ทุก 1 วินาที
 
+Android native scanner จะรอ `SCAN_RESULTS_AVAILABLE_ACTION` สูงสุด 2.5 วินาทีก่อนส่งค่า และ fallback ไปใช้ cached scan เมื่อ Android throttle การสแกน เพื่อเพิ่มโอกาสให้ `rssiReadings` มี AP1, AP2 และ AP3 ครบ
+
 BSSID prefix อยู่ใน `frontend/lib/connected_wifi_service.dart`:
 
 ```text

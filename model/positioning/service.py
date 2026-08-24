@@ -185,6 +185,10 @@ class PositioningService:
             ap_zones[item["name"]] = {
                 "zone": item["zone"],
                 "label": item.get("zoneLabel") or item["zone"],
+                "start_anchor": [
+                    float((item.get("startAnchor") or anchors["medium"])["x"]),
+                    float((item.get("startAnchor") or anchors["medium"])["y"]),
+                ],
                 "anchors": {
                     band: [
                         float(anchors[band]["x"]),
@@ -336,6 +340,14 @@ class PositioningService:
             )
             position = self._snap(estimate["position"])
             recalculate = state.current_position is None or roaming.roaming_confirmed
+            initial_zone_anchor_used = state.current_position is None
+            if initial_zone_anchor_used:
+                zone_config = self.config["ap_zones"][roaming.current_ap]
+                position = self._snap(
+                    zone_config.get("start_anchor", zone_config["anchors"]["medium"])
+                )
+                estimate["position_source"] = "zone_hallway_start_anchor"
+                estimate["confidence"] = "low"
             band_position_confirmed = False
             stable_zone_navigation = bool(
                 self.config.get("positioning", {}).get(
@@ -548,6 +560,51 @@ class PositioningService:
                     estimate["confidence"] = "low"
             elif multi_ap_result is None:
                 state.destination_proximity_count = 0
+
+            if (
+                stable_zone_navigation
+                and state.current_position is not None
+                and multi_ap_result is not None
+            ):
+                # With a complete three-AP scan, keep both the marker and its
+                # route locked while the fingerprint remains in the same
+                # zone. This prevents small RSSI changes (and sticky roaming
+                # association) from rebuilding a visibly jumping route.
+                stable_ap = state.fingerprint_ap or roaming.current_ap
+                stable_zone = self.config["ap_zones"][stable_ap]
+                estimate["zone"] = stable_zone["zone"]
+                estimate["label"] = stable_zone["label"]
+                if fingerprint_transition_confirmed:
+                    position = self._snap(
+                        stable_zone.get(
+                            "start_anchor", stable_zone["anchors"]["medium"]
+                        )
+                    )
+                    recalculate = True
+                    estimate["position_source"] = "confirmed_zone_transition"
+                    estimate["confidence"] = "medium"
+                    multi_ap_applied = True
+                else:
+                    position = state.current_position
+                    recalculate = False
+                    estimate["position_source"] = "stable_zone_lock"
+                    estimate["confidence"] = "medium"
+
+            if initial_zone_anchor_used:
+                # The first complete Wi-Fi reading may identify the zone, but
+                # an RSSI-derived point inside that zone is too uncertain for
+                # a route origin. Start at the configured hallway centre and
+                # let later stable fingerprints refine movement from there.
+                start_ap = state.fingerprint_ap or roaming.current_ap
+                start_zone = self.config["ap_zones"][start_ap]
+                position = self._snap(
+                    start_zone.get("start_anchor", start_zone["anchors"]["medium"])
+                )
+                estimate["zone"] = start_zone["zone"]
+                estimate["label"] = start_zone["label"]
+                estimate["position_source"] = "zone_hallway_start_anchor"
+                estimate["confidence"] = "medium" if multi_ap_applied else "low"
+                recalculate = True
             route = self._route(position, state.destination_id) if recalculate else None
             state.current_position = position
             if route is not None:

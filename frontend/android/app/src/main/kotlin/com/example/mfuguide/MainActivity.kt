@@ -1,7 +1,10 @@
 package com.example.mfuguide
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.hardware.Sensor
@@ -9,6 +12,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -18,6 +23,17 @@ class MainActivity : FlutterActivity(), SensorEventListener {
     private val permissionRequestCode = 4107
     private var pendingResult: MethodChannel.Result? = null
     private var pendingMethod: String? = null
+    private var pendingWifiScanResult: MethodChannel.Result? = null
+    private var wifiScanReceiverRegistered = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val wifiScanTimeout = Runnable { finishWifiScan() }
+    private val wifiScanReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) {
+                finishWifiScan()
+            }
+        }
+    }
     private lateinit var sensorManager: SensorManager
     private var stepSensor: Sensor? = null
     @Volatile private var latestStepCount: Long? = null
@@ -35,7 +51,7 @@ class MainActivity : FlutterActivity(), SensorEventListener {
                         else requestRequiredPermissions(call.method, result)
                     }
                     "getWifiScan" -> {
-                        if (hasRequiredPermissions(call.method)) result.success(readWifiScan())
+                        if (hasRequiredPermissions(call.method)) requestWifiScan(result)
                         else requestRequiredPermissions(call.method, result)
                     }
                     "getStepCount" -> {
@@ -118,11 +134,45 @@ class MainActivity : FlutterActivity(), SensorEventListener {
     }
 
     @Suppress("DEPRECATION")
-    private fun readWifiScan(): List<Map<String, Any>> {
+    private fun requestWifiScan(result: MethodChannel.Result) {
+        if (pendingWifiScanResult != null) {
+            result.error("WIFI_SCAN_ACTIVE", "A Wi-Fi scan is already running.", null)
+            return
+        }
+        pendingWifiScanResult = result
+        val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(wifiScanReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(wifiScanReceiver, filter)
+        }
+        wifiScanReceiverRegistered = true
+
         val manager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        // Android may throttle startScan; scanResults still returns the latest
-        // cached measurements, which is preferable to losing multi-AP input.
-        manager.startScan()
+        val started = manager.startScan()
+        // Android throttles active scans. If a new scan cannot start, return
+        // the latest cached multi-AP results instead of returning no data.
+        mainHandler.postDelayed(wifiScanTimeout, if (started) 2500L else 100L)
+    }
+
+    private fun finishWifiScan() {
+        val result = pendingWifiScanResult ?: return
+        pendingWifiScanResult = null
+        mainHandler.removeCallbacks(wifiScanTimeout)
+        if (wifiScanReceiverRegistered) {
+            try {
+                unregisterReceiver(wifiScanReceiver)
+            } catch (_: IllegalArgumentException) {
+                // Receiver may already be detached while the activity closes.
+            }
+            wifiScanReceiverRegistered = false
+        }
+        result.success(readWifiScanResults())
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readWifiScanResults(): List<Map<String, Any>> {
+        val manager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         return manager.scanResults
             .filter { it.SSID == "AS-Project" }
             .map {
@@ -152,7 +202,7 @@ class MainActivity : FlutterActivity(), SensorEventListener {
             startStepSensor()
             readStepCount(result)
         } else if (method == "getWifiScan") {
-            result.success(readWifiScan())
+            requestWifiScan(result)
         } else {
             result.success(readConnectedWifi())
         }
@@ -166,5 +216,20 @@ class MainActivity : FlutterActivity(), SensorEventListener {
     override fun onPause() {
         if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        mainHandler.removeCallbacks(wifiScanTimeout)
+        pendingWifiScanResult?.error("WIFI_SCAN_CANCELLED", "The Wi-Fi scan was cancelled.", null)
+        pendingWifiScanResult = null
+        if (wifiScanReceiverRegistered) {
+            try {
+                unregisterReceiver(wifiScanReceiver)
+            } catch (_: IllegalArgumentException) {
+                // Receiver was already unregistered.
+            }
+            wifiScanReceiverRegistered = false
+        }
+        super.onDestroy()
     }
 }

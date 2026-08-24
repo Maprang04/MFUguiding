@@ -12,7 +12,7 @@
     "reverse_guard_observations": 8
   },
   "positioning": {
-    "stable_zone_navigation": false,
+    "stable_zone_navigation": true,
     "band_confirmations": 3,
     "fingerprint_zone_confirmations": 3,
     "max_fingerprint_update_m": 0.75,
@@ -26,6 +26,7 @@
     "AP1": {
       "zone": "RIGHT_WING",
       "label": "Room 1 / right hallway area",
+      "start_anchor": [15.0, 6.0],
       "anchors": {
         "near": [16.0, 8.0],
         "medium": [15.0, 6.0],
@@ -35,6 +36,7 @@
     "AP2": {
       "zone": "CENTRAL_HALLWAY",
       "label": "Central hallway / Room 2 area",
+      "start_anchor": [12.0, 4.0],
       "anchors": {
         "near": [11.0, 7.0],
         "medium": [12.0, 4.0],
@@ -44,6 +46,7 @@
     "AP3": {
       "zone": "LEFT_WING",
       "label": "Room 3 / left hallway area",
+      "start_anchor": [6.0, 2.0],
       "anchors": {
         "near": [3.0, 2.0],
         "medium": [6.0, 2.0],

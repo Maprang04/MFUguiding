@@ -85,6 +85,7 @@ const mongoCatalog = {
         position: item.position,
         zone: item.zoneId,
         zoneLabel: labels[item.zoneId] || item.zoneId,
+        startAnchor: item.startAnchor || item.anchors.medium,
         anchors: item.anchors,
         lastSeenAt: item.lastSeenAt
       };

@@ -14,7 +14,7 @@ class PositioningServiceTests(unittest.TestCase):
         self.assertTrue(result["route_recalculated"])
         self.assertGreater(len(result["route"]), 1)
 
-    def test_three_ap_fingerprint_refines_position_inside_confirmed_zone(self):
+    def test_first_three_ap_fingerprint_starts_at_zone_hallway_anchor(self):
         self.service.config["positioning"]["stable_zone_navigation"] = False
         result = self.service.submit_observation(
             "nav-test",
@@ -24,8 +24,17 @@ class PositioningServiceTests(unittest.TestCase):
         )
         self.assertTrue(result["multi_ap_used"])
         self.assertEqual(result["multi_ap_strongest_ap"], "AP3")
-        self.assertEqual(result["position_source"], "three_ap_fingerprint")
+        self.assertEqual(result["position_source"], "zone_hallway_start_anchor")
+        self.assertEqual(result["estimated_position"], {"x": 6.125, "y": 2.125})
         self.assertTrue(result["route_recalculated"])
+
+        refined = self.service.submit_observation(
+            "nav-test",
+            "AP3",
+            -50,
+            {"AP1": -82, "AP2": -75, "AP3": -50},
+        )
+        self.assertEqual(refined["position_source"], "three_ap_fingerprint")
 
     def test_three_ap_scan_can_override_sticky_connected_ap_zone(self):
         self.service.config["positioning"]["stable_zone_navigation"] = False
@@ -52,6 +61,45 @@ class PositioningServiceTests(unittest.TestCase):
         self.assertEqual(result["candidate_fingerprint_count"], 0)
         self.assertTrue(result["fingerprint_zone_confirmed"])
         self.assertEqual(result["zone"], "LEFT_WING")
+
+    def test_stable_zone_route_changes_only_after_confirmed_fingerprint_zone(self):
+        self.service.config["positioning"]["stable_zone_navigation"] = True
+        ap3_readings = {"AP1": -82, "AP2": -75, "AP3": -50}
+        initial = self.service.submit_observation(
+            "nav-test", "AP3", -50, ap3_readings
+        )
+        original_position = initial["estimated_position"]
+
+        held = self.service.submit_observation(
+            "nav-test", "AP3", -54, {"AP1": -80, "AP2": -73, "AP3": -54}
+        )
+        self.assertEqual(held["position_source"], "stable_zone_lock")
+        self.assertEqual(held["estimated_position"], original_position)
+        self.assertFalse(held["route_recalculated"])
+
+        ap1_readings = {"AP1": -45, "AP2": -75, "AP3": -65}
+        transition_results = [
+            self.service.submit_observation("nav-test", "AP3", -65, ap1_readings)
+            for _ in range(7)
+        ]
+        confirmed_index = next(
+            index
+            for index, item in enumerate(transition_results)
+            if item["position_source"] == "confirmed_zone_transition"
+        )
+        confirmed = transition_results[confirmed_index]
+        self.assertTrue(
+            all(
+                not item["route_recalculated"]
+                for item in transition_results[:confirmed_index]
+            )
+        )
+        self.assertEqual(
+            sum(item["route_recalculated"] for item in transition_results), 1
+        )
+        self.assertEqual(confirmed["position_source"], "confirmed_zone_transition")
+        self.assertEqual(confirmed["zone"], "RIGHT_WING")
+        self.assertTrue(confirmed["route_recalculated"])
 
     def test_arrival_guard_requires_stable_destination_evidence(self):
         self.service.config["positioning"]["stable_zone_navigation"] = False
