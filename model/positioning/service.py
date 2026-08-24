@@ -46,6 +46,11 @@ class SessionState:
     candidate_fingerprint_ap: str | None = None
     candidate_fingerprint_count: int = 0
     destination_proximity_count: int = 0
+    initial_fingerprint_ap: str | None = None
+    initial_fingerprint_positions: list[tuple[float, float]] | None = None
+    initial_fingerprint_attempt_count: int = 0
+    initial_position_confirmed: bool = False
+    nearest_ap_last_rssi: float | None = None
 
 
 class PositioningService:
@@ -276,6 +281,20 @@ class PositioningService:
                 point = tuple(point)
                 if point != points[-1]:
                     points.append(point)
+            route_distance = sum(
+                math.hypot(
+                    points[index][0] - points[index - 1][0],
+                    points[index][1] - points[index - 1][1],
+                )
+                for index in range(1, len(points))
+            )
+            arrival_hold = float(
+                self.config.get("positioning", {}).get(
+                    "motion_arrival_hold_m", 1.75
+                )
+            )
+            requested_distance = distance
+            distance = min(distance, max(0.0, route_distance - arrival_hold))
             remaining_distance = distance
             index = 1
             current = points[0]
@@ -308,6 +327,10 @@ class PositioningService:
                 "distance_delta": consumed,
                 "distance_travelled": state.distance_travelled,
                 "arrived": arrived,
+                "arrival_guard_active": (
+                    arrival_hold > 0 and requested_distance > consumed
+                ),
+                "arrival_hold_m": arrival_hold,
                 "position_source": "step_route_progress",
             }
 
@@ -352,6 +375,11 @@ class PositioningService:
             stable_zone_navigation = bool(
                 self.config.get("positioning", {}).get(
                     "stable_zone_navigation", False
+                )
+            )
+            use_three_ap_initial_position = bool(
+                self.config.get("positioning", {}).get(
+                    "use_three_ap_initial_position", False
                 )
             )
             if state.current_position is None:
@@ -405,6 +433,11 @@ class PositioningService:
             multi_ap_applied = False
             fingerprint_zone_confirmed = False
             fingerprint_transition_confirmed = False
+            zone_position_jump = False
+            nearest_ap_rssi = None
+            nearest_ap_rssi_delta = 0.0
+            nearest_ap_trend = "unknown"
+            recommended_motion_distance = 0.75
             if self.multi_ap_positioner is not None and isinstance(rssi_readings, dict):
                 filtered_readings = {
                     ap_name: self.rssi_filter.median(state.session_id, ap_name)
@@ -420,6 +453,27 @@ class PositioningService:
 
             if multi_ap_result is not None:
                 observed_fingerprint_ap = multi_ap_result["strongest_ap"]
+                if observed_fingerprint_ap != state.fingerprint_ap:
+                    switch_margin = float(
+                        self.config.get("positioning", {}).get(
+                            "nearest_ap_switch_margin_db", 4.0
+                        )
+                    )
+                    observed_rssi = filtered_readings[observed_fingerprint_ap]
+                    current_rssi = filtered_readings.get(state.fingerprint_ap)
+                    if (
+                        current_rssi is not None
+                        and observed_rssi - current_rssi < switch_margin
+                    ):
+                        observed_fingerprint_ap = state.fingerprint_ap
+                if use_three_ap_initial_position and not state.initial_position_confirmed:
+                    state.initial_fingerprint_attempt_count += 1
+                    if observed_fingerprint_ap != state.initial_fingerprint_ap:
+                        state.initial_fingerprint_ap = observed_fingerprint_ap
+                        state.initial_fingerprint_positions = []
+                    state.initial_fingerprint_positions.append(
+                        tuple(multi_ap_result["position"])
+                    )
                 if observed_fingerprint_ap == state.fingerprint_ap:
                     state.candidate_fingerprint_ap = None
                     state.candidate_fingerprint_count = 0
@@ -441,6 +495,23 @@ class PositioningService:
                         state.candidate_fingerprint_count = 0
                         fingerprint_zone_confirmed = True
                         fingerprint_transition_confirmed = True
+
+                nearest_ap_rssi = float(filtered_readings[state.fingerprint_ap])
+                if state.nearest_ap_last_rssi is not None:
+                    nearest_ap_rssi_delta = (
+                        nearest_ap_rssi - state.nearest_ap_last_rssi
+                    )
+                    if nearest_ap_rssi_delta >= 1.5:
+                        nearest_ap_trend = "approaching"
+                    elif nearest_ap_rssi_delta <= -1.5:
+                        nearest_ap_trend = "leaving"
+                    else:
+                        nearest_ap_trend = "stable"
+                    recommended_motion_distance = max(
+                        0.65,
+                        min(1.05, 0.65 + abs(nearest_ap_rssi_delta) * 0.10),
+                    )
+                state.nearest_ap_last_rssi = nearest_ap_rssi
 
             # A complete three-AP fingerprint is more informative than the AP
             # the phone is currently associated with. Phones can remain stuck
@@ -580,7 +651,8 @@ class PositioningService:
                             "start_anchor", stable_zone["anchors"]["medium"]
                         )
                     )
-                    recalculate = True
+                    recalculate = False
+                    zone_position_jump = True
                     estimate["position_source"] = "confirmed_zone_transition"
                     estimate["confidence"] = "medium"
                     multi_ap_applied = True
@@ -589,6 +661,77 @@ class PositioningService:
                     recalculate = False
                     estimate["position_source"] = "stable_zone_lock"
                     estimate["confidence"] = "medium"
+
+            initial_fingerprint_confirmations = int(
+                self.config.get("positioning", {}).get(
+                    "initial_fingerprint_confirmations", 3
+                )
+            )
+            initial_samples = state.initial_fingerprint_positions or []
+            if (
+                stable_zone_navigation
+                and use_three_ap_initial_position
+                and not state.initial_position_confirmed
+                and multi_ap_result is not None
+                and state.initial_fingerprint_attempt_count
+                >= initial_fingerprint_confirmations
+            ):
+                has_consistent_samples = (
+                    len(initial_samples) >= initial_fingerprint_confirmations
+                    and state.initial_fingerprint_ap == state.fingerprint_ap
+                )
+                initial_zone = self.config["ap_zones"][
+                    state.fingerprint_ap or roaming.current_ap
+                ]
+                anchor = self._snap(
+                    initial_zone.get(
+                        "start_anchor", initial_zone["anchors"]["medium"]
+                    )
+                )
+                max_spread = float(
+                    self.config.get("positioning", {}).get(
+                        "initial_fingerprint_max_spread_m", 2.5
+                    )
+                )
+                max_offset = float(
+                    self.config.get("positioning", {}).get(
+                        "initial_fingerprint_max_anchor_offset_m", 8.0
+                    )
+                )
+                if has_consistent_samples:
+                    recent = initial_samples[-initial_fingerprint_confirmations:]
+                    median_x = sorted(point[0] for point in recent)[len(recent) // 2]
+                    median_y = sorted(point[1] for point in recent)[len(recent) // 2]
+                    median_position = (median_x, median_y)
+                    spread = max(
+                        math.hypot(
+                            point[0] - median_position[0],
+                            point[1] - median_position[1],
+                        )
+                        for point in recent
+                    )
+                    candidate = self._snap(median_position)
+                    anchor_offset = math.hypot(
+                        candidate[0] - anchor[0], candidate[1] - anchor[1]
+                    )
+                else:
+                    spread = float("inf")
+                    anchor_offset = float("inf")
+                    candidate = anchor
+                if spread <= max_spread and anchor_offset <= max_offset:
+                    position = candidate
+                    recalculate = True
+                    estimate["zone"] = initial_zone["zone"]
+                    estimate["label"] = initial_zone["label"]
+                    estimate["position_source"] = "three_ap_initial_position"
+                    estimate["confidence"] = "medium"
+                    multi_ap_applied = True
+                else:
+                    position = state.current_position or anchor
+                    recalculate = False
+                    estimate["position_source"] = "stable_zone_lock"
+                    estimate["confidence"] = "low"
+                state.initial_position_confirmed = True
 
             if initial_zone_anchor_used:
                 # The first complete Wi-Fi reading may identify the zone, but
@@ -607,6 +750,8 @@ class PositioningService:
                 recalculate = True
             route = self._route(position, state.destination_id) if recalculate else None
             state.current_position = position
+            if zone_position_jump and state.route:
+                state.route = [position] + [tuple(point) for point in state.route[1:]]
             if route is not None:
                 state.route = route
 
@@ -643,6 +788,18 @@ class PositioningService:
                 "candidate_fingerprint_count": state.candidate_fingerprint_count,
                 "fingerprint_zone_confirmed": fingerprint_zone_confirmed,
                 "fingerprint_transition_confirmed": fingerprint_transition_confirmed,
+                "initial_position_confirmed": state.initial_position_confirmed,
+                "initial_fingerprint_sample_count": len(
+                    state.initial_fingerprint_positions or []
+                ),
+                "initial_fingerprint_attempt_count": (
+                    state.initial_fingerprint_attempt_count
+                ),
+                "nearest_ap": state.fingerprint_ap,
+                "nearest_ap_rssi": nearest_ap_rssi,
+                "nearest_ap_rssi_delta": nearest_ap_rssi_delta,
+                "nearest_ap_trend": nearest_ap_trend,
+                "recommended_motion_distance_m": recommended_motion_distance,
                 "destination_proximity_count": state.destination_proximity_count,
                 "arrival_guard_active": estimate["position_source"] == "arrival_guard_hold",
                 "stable_zone_navigation": stable_zone_navigation,

@@ -183,6 +183,11 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  void _clearSearch() {
+    _searchController.clear();
+    _onSearchChanged('');
+  }
+
   void _selectSuggestion(Map<String, String> location) {
     _searchController.text = location['room'] ?? '';
     _searchController.selection = TextSelection.collapsed(
@@ -266,6 +271,7 @@ class _MapScreenState extends State<MapScreen> {
             },
             onChanged: _onSearchChanged,
             onSearch: _performSearch,
+            onClear: _clearSearch,
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
@@ -370,6 +376,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onLanguageTap;
   final ValueChanged<String> onChanged;
   final VoidCallback onSearch;
+  final VoidCallback onClear;
 
   const _Header({
     required this.language,
@@ -378,6 +385,7 @@ class _Header extends StatelessWidget {
     required this.onLanguageTap,
     required this.onChanged,
     required this.onSearch,
+    required this.onClear,
   });
 
   @override
@@ -464,11 +472,17 @@ class _Header extends StatelessWidget {
             decoration: InputDecoration(
               hintText: hint,
               prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: IconButton(
-                tooltip: 'Search',
-                onPressed: onSearch,
-                icon: const Icon(Icons.arrow_forward_rounded),
-              ),
+              suffixIcon: controller.text.isNotEmpty
+                  ? IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: onClear,
+                      icon: const Icon(Icons.close_rounded),
+                    )
+                  : IconButton(
+                      tooltip: 'Search',
+                      onPressed: onSearch,
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                    ),
             ),
           ),
         ],

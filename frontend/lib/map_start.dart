@@ -52,6 +52,7 @@ class _MapStartPageState extends State<MapStartPage> {
   Future<void> _positionUpdateQueue = Future<void>.value();
   int? _lastRouteVersion;
   bool _arrived = false;
+  double _motionDistanceMeters = 0.75;
 
   late String _language;
 
@@ -137,23 +138,11 @@ class _MapStartPageState extends State<MapStartPage> {
         final current = (result['session'] as Map?)?.cast<String, dynamic>();
         if (!mounted || current == null) return;
         final routeVersion = (current['route_version'] as num?)?.toInt();
-        final rerouted =
-            _lastRouteVersion != null &&
-            routeVersion != null &&
-            routeVersion > _lastRouteVersion!;
         setState(() {
           _session = current;
           _lastRouteVersion = routeVersion;
           _isLoading = false;
         });
-        if (rerouted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(t('Route recalculated', 'คำนวณเส้นทางใหม่แล้ว')),
-              duration: const Duration(milliseconds: 900),
-            ),
-          );
-        }
         await Future<void>.delayed(const Duration(milliseconds: 850));
       }
       await _playRouteToDestination();
@@ -194,30 +183,20 @@ class _MapStartPageState extends State<MapStartPage> {
           routeVersion < _lastRouteVersion!) {
         return;
       }
-      final rerouted =
-          _lastRouteVersion != null &&
-          routeVersion != null &&
-          routeVersion > _lastRouteVersion!;
+      final positioning = result['positioning'] as Map?;
+      final recommendedDistance =
+          (positioning?['recommended_motion_distance_m'] as num?)?.toDouble();
       setState(() {
         _session = current;
+        if (recommendedDistance != null) {
+          _motionDistanceMeters = recommendedDistance.clamp(0.55, 1.1);
+        }
         _lastRouteVersion = routeVersion;
         _isLoading = false;
         _waitingForPosition =
             _completeFingerprintReadings < 3 && _wifiReadAttempts < 8;
         _error = null;
       });
-      if (rerouted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              t(
-                'Zone changed. Route recalculated.',
-                'เปลี่ยนโซนและคำนวณเส้นทางใหม่แล้ว',
-              ),
-            ),
-          ),
-        );
-      }
     } on ConnectedWifiException catch (error) {
       if (mounted) {
         setState(() {
@@ -270,11 +249,12 @@ class _MapStartPageState extends State<MapStartPage> {
         () => _navigationApi.submitMotionProgress(
           sessionId: _sessionId!,
           clientId: _clientId,
-          distanceMeters: 0.9,
+          distanceMeters: _motionDistanceMeters,
         ),
       );
       final current = (result['session'] as Map?)?.cast<String, dynamic>();
       if (!mounted || current == null) return;
+      final arrived = (result['progress'] as Map?)?['arrived'] == true;
       final routeVersion = (current['route_version'] as num?)?.toInt();
       if (_lastRouteVersion != null &&
           routeVersion != null &&
@@ -284,7 +264,18 @@ class _MapStartPageState extends State<MapStartPage> {
       setState(() {
         _session = current;
         _lastRouteVersion = routeVersion ?? _lastRouteVersion;
+        _arrived = arrived;
       });
+      if (arrived) {
+        try {
+          await _navigationApi.completeSession(
+            sessionId: _sessionId!,
+            clientId: _clientId,
+          );
+        } on NavigationApiException {
+          // The marker can remain arrived if completion persistence retries later.
+        }
+      }
     } on PlatformException {
       // Wi-Fi-only navigation remains available on devices without a sensor.
     } on TimeoutException {
@@ -302,6 +293,7 @@ class _MapStartPageState extends State<MapStartPage> {
     if (_arrived || _stopping || _sessionId == null) return;
     _arrived = true;
     _wifiTimer?.cancel();
+    _motionTimer?.cancel();
     try {
       final completed = await _navigationApi.completeSession(
         sessionId: _sessionId!,
@@ -880,16 +872,6 @@ class _MapStartPageState extends State<MapStartPage> {
   }
 
   Widget _buildBottomBar() {
-    final route = (_session?['route'] as List?) ?? const [];
-    final position = _session?['estimated_position'] as Map?;
-    final positionText = position == null
-        ? t('Waiting for position', 'กำลังรอตำแหน่ง')
-        : '(${position['x']}, ${position['y']}) • ${route.length} waypoints';
-    final displayedPositionText = position == null
-        ? positionText
-        : '${_remainingDistance.toStringAsFixed(1)} m remaining • '
-              '${route.length} waypoints • '
-              '±${_positionUncertaintyMeters.toStringAsFixed(1)} m';
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -915,11 +897,6 @@ class _MapStartPageState extends State<MapStartPage> {
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  displayedPositionText,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ],
             ),
@@ -1105,7 +1082,7 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
 
   List<Map> _displayRoute(Offset? current, double progress) {
     if (current == null || _movementPath.length < 2 || progress >= 1) {
-      return widget.route;
+      return _connectRouteOrigin(widget.route, current);
     }
 
     // Consume exactly the same distance along the movement polyline as the
@@ -1151,7 +1128,16 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
         result.add(point);
       }
     }
-    return result;
+    return _connectRouteOrigin(result, current);
+  }
+
+  List<Map> _connectRouteOrigin(List<Map> route, Offset? current) {
+    if (current == null) return route;
+    final connected = <Map>[
+      {'x': current.dx, 'y': current.dy},
+    ];
+    if (route.length > 1) connected.addAll(route.skip(1));
+    return connected;
   }
 
   void _followUser() {
@@ -1234,10 +1220,20 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
                         final position = animated == null
                             ? widget.currentPosition
                             : {'x': animated.dx, 'y': animated.dy};
+                        final routeOrigin = animated ??
+                            (widget.currentPosition?['x'] is num &&
+                                    widget.currentPosition?['y'] is num
+                                ? Offset(
+                                    (widget.currentPosition!['x'] as num)
+                                        .toDouble(),
+                                    (widget.currentPosition!['y'] as num)
+                                        .toDouble(),
+                                  )
+                                : null);
                         return CustomPaint(
                           painter: _NavigationRoutePainter(
                             route: _displayRoute(
-                              animated,
+                              routeOrigin,
                               _markerController.value,
                             ),
                             currentPosition: position,
