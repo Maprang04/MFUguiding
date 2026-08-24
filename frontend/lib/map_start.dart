@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mfuguide/map_report.dart';
 import 'package:mfuguide/floor_plan_coordinates.dart';
 import 'package:mfuguide/navigation_api.dart';
 import 'package:mfuguide/user_page_header.dart';
 import 'package:mfuguide/connected_wifi_service.dart';
+import 'package:mfuguide/motion_detection_service.dart';
 
 class MapStartPage extends StatefulWidget {
   final String currentLanguage;
@@ -32,8 +34,11 @@ class _MapStartPageState extends State<MapStartPage> {
   final Color _burgundy = const Color(0xFF8B0000);
   final NavigationApi _navigationApi = NavigationApi();
   final ConnectedWifiService _wifiService = ConnectedWifiService();
+  final MotionDetectionService _motionService = MotionDetectionService();
   Timer? _wifiTimer;
+  Timer? _motionTimer;
   bool _readingWifi = false;
+  bool _readingMotion = false;
   bool _waitingForPosition = true;
   int _wifiReadAttempts = 0;
   int _completeFingerprintReadings = 0;
@@ -44,6 +49,7 @@ class _MapStartPageState extends State<MapStartPage> {
   String? _sessionId;
   late final String _clientId;
   Map<String, dynamic>? _session;
+  Future<void> _positionUpdateQueue = Future<void>.value();
   int? _lastRouteVersion;
   bool _arrived = false;
 
@@ -104,6 +110,10 @@ class _MapStartPageState extends State<MapStartPage> {
       _wifiTimer = Timer.periodic(
         const Duration(seconds: 1),
         (_) => _readAndSubmitWifi(),
+      );
+      _motionTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _advanceWhileMoving(),
       );
       /* Legacy scripted simulator observations removed from the runtime flow.
       const observations = [
@@ -168,15 +178,22 @@ class _MapStartPageState extends State<MapStartPage> {
       } else {
         _completeFingerprintReadings = 0;
       }
-      final result = await _navigationApi.submitMobileObservation(
-        clientId: _clientId,
-        associatedAp: reading.accessPoint,
-        rssi: reading.rssi,
-        accessPointRssi: reading.accessPointRssi,
+      final result = await _serializePositionUpdate(
+        () => _navigationApi.submitMobileObservation(
+          clientId: _clientId,
+          associatedAp: reading.accessPoint,
+          rssi: reading.rssi,
+          accessPointRssi: reading.accessPointRssi,
+        ),
       );
       final current = (result['session'] as Map?)?.cast<String, dynamic>();
       if (!mounted || current == null) return;
       final routeVersion = (current['route_version'] as num?)?.toInt();
+      if (_lastRouteVersion != null &&
+          routeVersion != null &&
+          routeVersion < _lastRouteVersion!) {
+        return;
+      }
       final rerouted =
           _lastRouteVersion != null &&
           routeVersion != null &&
@@ -219,6 +236,63 @@ class _MapStartPageState extends State<MapStartPage> {
       }
     } finally {
       _readingWifi = false;
+    }
+  }
+
+  Future<T> _serializePositionUpdate<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _positionUpdateQueue = _positionUpdateQueue.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<void> _advanceWhileMoving() async {
+    if (_readingMotion ||
+        _stopping ||
+        _waitingForPosition ||
+        _arrived ||
+        !mounted ||
+        _sessionId == null) {
+      return;
+    }
+    final route = ((_session?['route'] as List?) ?? const []);
+    if (route.length < 2) return;
+    _readingMotion = true;
+    try {
+      final motion = await _motionService.read();
+      if (!motion.moving || !mounted || _stopping) return;
+      final result = await _serializePositionUpdate(
+        () => _navigationApi.submitMotionProgress(
+          sessionId: _sessionId!,
+          clientId: _clientId,
+          distanceMeters: 0.9,
+        ),
+      );
+      final current = (result['session'] as Map?)?.cast<String, dynamic>();
+      if (!mounted || current == null) return;
+      final routeVersion = (current['route_version'] as num?)?.toInt();
+      if (_lastRouteVersion != null &&
+          routeVersion != null &&
+          routeVersion < _lastRouteVersion!) {
+        return;
+      }
+      setState(() {
+        _session = current;
+        _lastRouteVersion = routeVersion ?? _lastRouteVersion;
+      });
+    } on PlatformException {
+      // Wi-Fi-only navigation remains available on devices without a sensor.
+    } on TimeoutException {
+      // A missed sensor poll must not interrupt navigation.
+    } on NavigationApiException {
+      // The next motion/Wi-Fi cycle will retry after a temporary failure.
+    } finally {
+      _readingMotion = false;
     }
   }
 
@@ -322,6 +396,7 @@ class _MapStartPageState extends State<MapStartPage> {
   @override
   void dispose() {
     _wifiTimer?.cancel();
+    _motionTimer?.cancel();
     _navigationApi.close();
     super.dispose();
   }

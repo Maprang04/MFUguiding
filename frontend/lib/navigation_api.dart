@@ -120,6 +120,24 @@ class NavigationApi {
     );
   }
 
+  Future<Map<String, dynamic>> submitMotionProgress({
+    required String sessionId,
+    required String clientId,
+    required double distanceMeters,
+  }) {
+    return _request(
+      'POST',
+      '/sessions/${Uri.encodeComponent(sessionId)}/progress',
+      clientId: clientId,
+      body: {
+        'client_id': clientId,
+        'motion_distance_meters': distanceMeters,
+        'source': 'accelerometer_motion',
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> getSession({
     required String sessionId,
     required String clientId,

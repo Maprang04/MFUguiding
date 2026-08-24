@@ -295,13 +295,19 @@ function createNavigationService(dependencies) {
     const session = await requireOwnedSession(sessionId, clientId, false);
     const stepsDelta = Number(input && input.steps_delta);
     const strideLength = Number(input && input.stride_length);
+    const motionDistance = Number(input && input.motion_distance_meters);
+    const usesMotionDistance = Number.isFinite(motionDistance);
     const timestamp = input && input.timestamp ? new Date(input.timestamp) : clock();
-    if (!Number.isInteger(stepsDelta) || stepsDelta <= 0 || stepsDelta > 30 ||
-        !Number.isFinite(strideLength) || strideLength < 0.35 || strideLength > 1.2 ||
+    if ((!usesMotionDistance &&
+          (!Number.isInteger(stepsDelta) || stepsDelta <= 0 || stepsDelta > 30 ||
+           !Number.isFinite(strideLength) || strideLength < 0.35 || strideLength > 1.2)) ||
+        (usesMotionDistance && (motionDistance < 0.1 || motionDistance > 2)) ||
         Number.isNaN(timestamp.getTime())) {
-      throw serviceError(400, 'INVALID_PROGRESS', 'steps_delta, stride_length and timestamp are invalid');
+      throw serviceError(400, 'INVALID_PROGRESS', 'motion distance or step progress is invalid');
     }
-    const distance = Math.min(20, stepsDelta * strideLength);
+    const distance = usesMotionDistance
+      ? motionDistance
+      : Math.min(20, stepsDelta * strideLength);
     const progressInput = { distance_meters: distance };
     let result;
     try {
@@ -327,8 +333,8 @@ function createNavigationService(dependencies) {
       positionSource: result.position_source,
       route: result.route || [],
       routeVersion: (session.routeVersion || 0) + 1,
-      totalSteps: (session.totalSteps || 0) + stepsDelta,
-      strideLength,
+      totalSteps: (session.totalSteps || 0) + (usesMotionDistance ? 0 : stepsDelta),
+      strideLength: usesMotionDistance ? session.strideLength : strideLength,
       distanceTravelled: result.distance_travelled,
       lastProgressAt: timestamp
     });

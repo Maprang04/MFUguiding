@@ -243,3 +243,21 @@ test('moves a selected start forward using step progress', async function () {
   assert.equal(result.session.position_source, 'step_route_progress');
   assert.deepEqual(result.session.route[0], result.session.estimated_position);
 });
+
+test('moves forward from accelerometer motion without adding steps', async function () {
+  const context = setup();
+  const created = await context.service.createSession({
+    client_id: 'device-motion',
+    destination_id: 'room_1',
+    start_position: { x: 11, y: 5 },
+    start_position_source: 'user_selected'
+  });
+  const result = await context.service.submitProgress(
+    created.session_id,
+    'device-motion',
+    { motion_distance_meters: 0.9, source: 'accelerometer_motion' }
+  );
+  assert.equal(result.session.total_steps, 0);
+  assert.equal(result.session.distance_travelled, 0.9);
+  assert.deepEqual(result.session.route[0], result.session.estimated_position);
+});

@@ -36,12 +36,19 @@ class MainActivity : FlutterActivity(), SensorEventListener {
     }
     private lateinit var sensorManager: SensorManager
     private var stepSensor: Sensor? = null
+    private var accelerometer: Sensor? = null
     @Volatile private var latestStepCount: Long? = null
+    private val gravity = FloatArray(3)
+    @Volatile private var lastMotionAtMs: Long = 0
+    @Volatile private var motionStartedAtMs: Long = 0
+    @Volatile private var motionIntensity: Double = 0.0
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        startMotionSensor()
         if (hasActivityPermission()) startStepSensor()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
@@ -58,6 +65,7 @@ class MainActivity : FlutterActivity(), SensorEventListener {
                         if (hasRequiredPermissions(call.method)) readStepCount(result)
                         else requestRequiredPermissions(call.method, result)
                     }
+                    "getMotionState" -> readMotionState(result)
                     else -> result.notImplemented()
                 }
             }
@@ -99,6 +107,29 @@ class MainActivity : FlutterActivity(), SensorEventListener {
         sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_FASTEST, 0)
     }
 
+    private fun startMotionSensor() {
+        val sensor = accelerometer ?: return
+        sensorManager.unregisterListener(this, sensor)
+        sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+    }
+
+    private fun readMotionState(result: MethodChannel.Result) {
+        if (accelerometer == null) {
+            result.error("ACCELEROMETER_UNAVAILABLE", "This phone has no accelerometer.", null)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val recentlyActive = now - lastMotionAtMs <= 1400L
+        val sustained = motionStartedAtMs > 0L && now - motionStartedAtMs >= 450L
+        result.success(
+            mapOf(
+                "moving" to (recentlyActive && sustained),
+                "intensity" to motionIntensity,
+                "lastMotionAgeMs" to if (lastMotionAtMs == 0L) -1L else now - lastMotionAtMs
+            )
+        )
+    }
+
     private fun readStepCount(result: MethodChannel.Result) {
         if (stepSensor == null) {
             result.error("STEP_COUNTER_UNAVAILABLE", "This phone has no step counter sensor.", null)
@@ -116,6 +147,24 @@ class MainActivity : FlutterActivity(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) {
             latestStepCount = event.values[0].toLong()
+        } else if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            val alpha = 0.82f
+            var squared = 0.0
+            for (index in 0..2) {
+                gravity[index] = alpha * gravity[index] + (1f - alpha) * event.values[index]
+                val linear = event.values[index] - gravity[index]
+                squared += linear * linear
+            }
+            val magnitude = kotlin.math.sqrt(squared)
+            motionIntensity = motionIntensity * 0.85 + magnitude * 0.15
+            val now = System.currentTimeMillis()
+            if (magnitude >= 0.55) {
+                if (now - lastMotionAtMs > 650L) motionStartedAtMs = now
+                lastMotionAtMs = now
+            } else if (now - lastMotionAtMs > 1400L) {
+                motionStartedAtMs = 0L
+                motionIntensity *= 0.8
+            }
         }
     }
 
@@ -210,6 +259,7 @@ class MainActivity : FlutterActivity(), SensorEventListener {
 
     override fun onResume() {
         super.onResume()
+        if (::sensorManager.isInitialized) startMotionSensor()
         if (::sensorManager.isInitialized && hasActivityPermission()) startStepSensor()
     }
 
