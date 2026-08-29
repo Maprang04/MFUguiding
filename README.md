@@ -1,260 +1,215 @@
 # MFU SmartGuide
 
-ระบบนำทางภายในอาคาร ประกอบด้วย Flutter Android, Node.js Backend, Python Positioning API และ MongoDB Atlas
+MFU SmartGuide is an Android indoor-navigation prototype for Mae Fah Luang University. It combines a Flutter application, Node.js backend, Python positioning service, Redis, and MongoDB Atlas.
 
-```text
-Android app -> Node.js Backend (:8097) -> Python Positioning API (:8001)
-                    |
-                    -> MongoDB Atlas (indoor_navigation)
+The system estimates a user's **zone-level position** from the connected Wi-Fi access point and optional AP1/AP2/AP3 RSSI scan. It then calculates a wall-safe route on an occupancy grid. The result is an indoor estimate, not GPS or exact point-level tracking.
+
+## System overview
+
+```mermaid
+flowchart LR
+  Phone[Flutter Android app] -->|HTTP :8097| Backend[Node.js backend]
+  Backend --> Mongo[(MongoDB Atlas\nindoor_navigation)]
+  Backend --> Redis[(Redis)]
+  Backend -->|HTTP :8001| Model[Python positioning API]
 ```
 
-มือถืออ่าน AP/BSSID ที่เชื่อมต่ออยู่และ RSSI ทุก 1 วินาที โมเดลช่วยจำแนกโซน และระบบยืนยันการ roaming 3 ค่าติดต่อกันก่อนเปลี่ยนโซน เมื่อเปลี่ยนโซนแล้วหมุดจะค่อย ๆ เลื่อนไปตามเส้นทางด้วยความเร็วประมาณ 1.1 เมตร/วินาที ระบบรุ่นปัจจุบันไม่ใช้ Step Counter ดังนั้นตำแหน่งระหว่างโซนเป็นตำแหน่งประมาณการ ไม่ใช่พิกัดจริงระดับจุด
+Current features include:
 
-## ฟังก์ชันปัจจุบัน
+- separate User and Admin login flows with revocable sessions;
+- room search with suggestions and selectable destinations;
+- favorites and navigation from the Favorite page;
+- Android connected-AP/BSSID and RSSI observations;
+- optional three-AP readings, median filtering, and roaming hysteresis;
+- A* routing with wall and diagonal-corner validation;
+- user app-issue reports and administrator report review;
+- administrator dashboard and map-data management;
+- Docker Compose startup for backend, positioning model, and Redis.
 
-### ผู้ใช้
+## Important limitations
 
-- Sign in/Sign out และเก็บ session อย่างปลอดภัยบนอุปกรณ์
-- ค้นหาห้องพร้อมคำแนะนำระหว่างพิมพ์
-- บันทึกและเริ่มนำทางจากหน้า Favorite
-- อ่าน AP/BSSID ที่มือถือเชื่อมต่อเพื่อหาโซนเริ่มต้นอัตโนมัติ โดยไม่ถามตำแหน่งเริ่มต้น
-- แสดงเส้นทางบนแผนที่และติดตามหมุดแบบ follow camera
-- เมื่อยืนยัน roaming หมุดจะเคลื่อนผ่าน waypoint ด้วยความเร็วประมาณ 1.1 เมตร/วินาที และตัดเส้นที่เดินผ่านมา
-- ส่งรายงานปัญหาการใช้งานแอป
+- Wi-Fi positioning is currently an approximate zone-level estimate.
+- The current release does not connect to the Cisco Controller.
+- Marker movement depends on accepted Wi-Fi observations; it does not track every physical step.
+- Python positioning sessions are held in memory and are cleared when its container restarts.
+- Emergency Alert cards in the Admin interface are demonstration data, not a completed real-time emergency service.
+- MongoDB Atlas is external and is not started by Docker Compose.
 
-### ผู้ดูแลระบบ
+## Repository structure
 
-- Dashboard สรุปจำนวนห้อง, AP, โซน และรายงานที่เปิดอยู่
-- จัดการข้อมูลแผนที่ ห้อง จุดหมาย AP และโซน
-- ดูและเปลี่ยนสถานะรายงานจากผู้ใช้
-- แยกสิทธิ์และหน้าจอ Admin ออกจาก User
+```text
+MFUguiding/
+├── frontend/           Flutter Android application
+├── backend-node/       Node.js REST API and MongoDB models
+├── model/              Python positioning and routing service
+├── docs/               Project, API, database and operating documents
+├── docker-compose.yml  Backend/model/Redis orchestration
+└── RUN_FULL_SYSTEM.md  Detailed local handover and run guide
+```
 
-### Backend และ Model
+## Prerequisites
 
-- REST API สำหรับ authentication, favorites, reports, map catalog และ navigation sessions
-- เก็บข้อมูลใน MongoDB Atlas database `indoor_navigation`
-- Python FastAPI ประเมินโซน กรอง RSSI ด้วย median และคำนวณเส้นทางบนกริด 0.25 เมตร
-- Zone classifier ช่วยเพิ่มความเชื่อมั่น แต่ AP ที่มือถือเชื่อมต่อเป็นขอบเขตหลักของโซน
-- ยืนยัน AP ใหม่ 3 observation ก่อนเปลี่ยนโซน เพื่อลดอาการตำแหน่งเด้ง
+- Git
+- Docker Desktop with Docker Compose
+- a MongoDB Atlas cluster reachable from the reviewer's network
+- Flutter and Android tooling only when building or modifying the APK
+- an Android phone connected to `AS-Project` for live positioning tests
 
-## สิ่งที่ต้องติดตั้ง
+## Quick start with Docker
 
-- Python และ virtual environment ที่ `model/.venv`
-- Node.js 20 LTS
-- Flutter SDK และ Android Studio
-- MongoDB Atlas พร้อม database `indoor_navigation`
-- มือถือ Android และคอมพิวเตอร์ที่เชื่อมต่อถึงกันผ่านเครือข่ายเดียวกัน
+### 1. Clone and enter the repository
 
-ห้าม commit `.env.local`, MongoDB URI, รหัสผ่าน หรือ API key
+```powershell
+git clone <gitlab-repository-url>
+cd MFUguiding
+```
 
-## 1. ตั้งค่า Backend
+### 2. Create the private backend environment file
 
-สร้างหรือแก้ไฟล์ `backend-node/.env.local`:
+```powershell
+Copy-Item backend-node/.env.example backend-node/.env
+```
+
+Edit `backend-node/.env` and set at least:
 
 ```env
-PORT=8097
 MONGODB_ATLAS=mongodb+srv://<username>:<url-encoded-password>@<cluster-host>/indoor_navigation?retryWrites=true&w=majority
 INDOOR_NAVIGATION_DB=indoor_navigation
-
-POSITIONING_MODE=http
-POSITIONING_SERVICE_URL=http://127.0.0.1:8001
-POSITIONING_SERVICE_TIMEOUT_MS=5000
-POSITIONING_SIMULATOR_ENABLED=false
-NAVIGATION_OBSERVATION_SOURCE=mobile
-POSITIONING_ROAMING_CONFIRMATIONS=3
+MOBILE_USER_EMAIL=user@example.invalid
+MOBILE_USER_PASSWORD=<strong-local-password>
+MOBILE_ADMIN_EMAIL=admin@example.invalid
+MOBILE_ADMIN_PASSWORD=<strong-local-password>
 ```
 
-ใน Atlas ให้เพิ่ม **Public IP** ปัจจุบันที่ `Security > Network Access > Add Current IP Address` และตรวจว่า collections อยู่ใน database `indoor_navigation` ไม่ใช่ `NewSystem` ควรใช้ URI แบบ `mongodb+srv://` ไม่ใช่รายการ shard host แบบเก่า
+The `.env` file is ignored by Git. Supply credentials to the reviewer through a separate secure channel. Add the reviewer's current public IP to MongoDB Atlas Network Access with the minimum necessary access period.
 
-## 2. เปิด Python Positioning Model
-
-เปิด PowerShell หน้าต่างที่ 1:
+### 3. Build and start the services
 
 ```powershell
-cd C:\Users\araya\Downloads\MFUguiding\model
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn positioning_api:app --host 0.0.0.0 --port 8001
+docker compose up -d --build
+docker compose ps
 ```
 
-ตรวจสอบ:
+Expected services: `backend`, `model`, and `redis`, all healthy.
 
-```text
-http://127.0.0.1:8001/health
-http://127.0.0.1:8001/docs
-```
-
-`/health` ควรตอบสำเร็จและมี `"zone_model_loaded": true`
-
-หากต้องฝึกโมเดลใหม่จาก fingerprint:
+### 4. Seed reference data and local test accounts
 
 ```powershell
-cd C:\Users\araya\Downloads\MFUguiding\model
-.\.venv\Scripts\python.exe models\train_zone_classifier.py
+docker compose exec backend npm run seed:navigation-map
+docker compose exec backend npm run seed:mobile-users
 ```
 
-## 3. เปิด Node.js Backend
+Run seeds only against the intended `indoor_navigation` database. The map seed creates or updates one floor, three destinations, three APs, and three zones.
 
-เปิด PowerShell หน้าต่างที่ 2 โดยไม่ปิด Model:
+### 5. Verify health
 
 ```powershell
-cd C:\Users\araya\Downloads\MFUguiding\backend-node
-npm.cmd install
-npm.cmd run start:local
+curl.exe http://127.0.0.1:8097/healthz
+curl.exe http://127.0.0.1:8097/api/v1/navigation/health
+curl.exe http://127.0.0.1:8001/health
 ```
 
-ตรวจสอบจาก PowerShell อีกหน้าต่าง:
+The first endpoint should return `OK`; navigation dependencies and the Python model should report `status: ok`.
+
+### 6. Stop or restart
 
 ```powershell
-curl.exe --noproxy "*" http://127.0.0.1:8097/healthz
-curl.exe --noproxy "*" http://127.0.0.1:8097/api/v1/navigation/health
+docker compose stop
+docker compose start
 ```
 
-ทั้งสองระบบต้องพร้อมก่อนเปิดแอป ข้อความ `Redis connection failed` ข้ามได้สำหรับการทดสอบ navigation แบบ local แต่ `/healthz` ต้องตอบ `200 OK`
-
-## 4. รัน Flutter ระหว่างพัฒนา
-
-### Android Emulator
+To stop and remove containers while preserving the named Redis volume:
 
 ```powershell
-cd C:\Users\araya\Downloads\MFUguiding\frontend
-flutter pub get
-flutter run --dart-define=BACKEND_BASE_URL=http://10.0.2.2:8097
+docker compose down
 ```
 
-### มือถือผ่าน USB Debugging
+Do not use `docker compose down -v` unless deleting local Docker data is intentional.
 
-```powershell
-cd C:\Users\araya\Downloads\MFUguiding\frontend
-flutter devices
-adb -s <device-id> reverse tcp:8097 tcp:8097
-flutter run -d <device-id> --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8097
-```
+## Run the Android app
 
-ระหว่าง `flutter run` กด `r` เพื่อ Hot Reload และกด `R` เพื่อ Hot Restart
-
-## 5. สร้าง APK สำหรับติดตั้งโดยไม่เปิด Developer mode
-
-ดู IPv4 ของคอมพิวเตอร์:
+The installed APK must use a backend address reachable from the phone. First find the computer's current IPv4 address:
 
 ```powershell
 ipconfig
 ```
 
-ก่อน build ให้เปิด URL ต่อไปนี้จาก browser บนมือถือ โดยแทน `<computer-ip>` ด้วย IPv4 ปัจจุบัน:
+Open this URL in the phone browser:
 
 ```text
 http://<computer-ip>:8097/healthz
 ```
 
-ถ้าขึ้น `OK` ให้สร้าง APK:
+If it shows `OK`, build the APK:
 
 ```powershell
-cd C:\Users\araya\Downloads\MFUguiding\frontend
+cd frontend
 flutter clean
 flutter pub get
 flutter build apk --release --dart-define=BACKEND_BASE_URL=http://<computer-ip>:8097
 ```
 
-ห้ามคัดลอก IP จากตัวอย่างเก่าหรือจากวันก่อน เพราะ DHCP ของเครือข่ายอาจเปลี่ยน IP ทุกวัน
-
-APK อยู่ที่:
+Output:
 
 ```text
-C:\Users\araya\Downloads\MFUguiding\frontend\build\app\outputs\flutter-apk\app-release.apk
+frontend/build/app/outputs/flutter-apk/app-release.apk
 ```
 
-เปิดโฟลเดอร์ด้วย:
+An APK embeds this URL at build time. If DHCP changes the computer IP, rebuild with the new reachable address. USB development and emulator alternatives are documented in `RUN_FULL_SYSTEM.md`.
+
+## Automated verification
+
+With Docker services running:
 
 ```powershell
-explorer "C:\Users\araya\Downloads\MFUguiding\frontend\build\app\outputs\flutter-apk"
+docker compose exec model python -m unittest discover -s tests -v
+docker compose exec backend npm run test:navigation
 ```
 
-ส่ง APK ไปมือถือ เปิด `Install unknown apps` ให้แอปที่ใช้เปิดไฟล์ แล้วติดตั้ง
-
-## 6. วิธีอัปเดตแอปหลังแก้โค้ด
-
-แอปที่ติดตั้งจาก APK ไม่อัปเดตอัตโนมัติ หลังแก้โค้ดให้:
-
-1. ตรวจ IPv4 ของคอมพิวเตอร์อีกครั้ง
-2. รัน `flutter clean` และ `flutter pub get`
-3. build `app-release.apk` ใหม่ด้วย `BACKEND_BASE_URL` ที่ถูกต้อง
-4. ส่ง APK ใหม่ไปมือถือและกดติดตั้งทับแอปเดิม
-
-ถ้า package name และ signing key ไม่เปลี่ยน สามารถติดตั้งทับและเก็บข้อมูลเดิมได้ หาก Android แจ้งว่าลายเซ็นไม่ตรง ต้องถอนแอปเดิมก่อน ซึ่งจะลบข้อมูลภายในแอป
-
-## 7. ทดสอบตำแหน่งด้วย Wi-Fi จริง
-
-1. เปิด Model ที่พอร์ต `8001`
-2. เปิด Backend ที่พอร์ต `8097`
-3. ใช้มือถือเปิด `http://<computer-ip>:8097/healthz` และต้องพบ `OK`
-4. เชื่อมมือถือกับ SSID `AS-Project`
-5. เปิด Wi-Fi และ Location
-6. อนุญาต Location และ Nearby Wi-Fi Devices ให้แอป ไม่จำเป็นต้องอนุญาต Physical Activity สำหรับระบบปัจจุบัน
-7. Sign in แล้วเลือกห้องปลายทาง
-8. กดเริ่มนำทาง แอปจะอ่าน AP/BSSID และหาโซนเริ่มต้นอัตโนมัติ ไม่ถามจุดเริ่มต้น
-9. ตรวจว่าหมุดและเส้นทางเริ่มจาก anchor ของโซนที่ตรวจพบ
-10. เดินไปยังพื้นที่ของ AP ถัดไป ระบบจะตรวจ Wi-Fi ทุก 1 วินาที
-11. เมื่อพบ AP ใหม่ครบ 3 ครั้ง ระบบจะยืนยัน roaming คำนวณเส้นใหม่ และค่อย ๆ เลื่อนหมุดผ่าน waypoint ด้วยความเร็วประมาณ 1.1 เมตร/วินาที
-12. ตรวจว่าเส้นสีน้ำเงินเริ่มจากหมุดและส่วนที่ผ่านแล้วถูกตัดออก
-
-ข้อจำกัด: AP ที่เชื่อมต่อเพียงตัวเดียวระบุได้ในระดับโซน ระบบไม่สามารถรู้ความเร็วหรือทิศทางการเดินจริงระหว่าง AP ได้ การเคลื่อนหมุดจึงเป็นภาพประมาณการตามเส้นทาง
-
-## 8. BSSID และ AP Mapping
-
-แก้ mapping ได้ที่ `frontend/lib/connected_wifi_service.dart`
-
-```text
-AP1 -> RIGHT_WING
-AP2 -> CENTRAL_HALLWAY
-AP3 -> LEFT_WING
-```
-
-ถ้าแอปแสดง `Unknown AS-Project BSSID` ให้นำ BSSID ที่แสดงมาเพิ่ม mapping ให้ตรงกับ AP จริง
-
-## 9. รันชุดทดสอบ
-
-Model:
+For Flutter development:
 
 ```powershell
-cd C:\Users\araya\Downloads\MFUguiding\model
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
-
-Backend navigation:
-
-```powershell
-cd C:\Users\araya\Downloads\MFUguiding\backend-node
-npm.cmd run test:navigation
-```
-
-Flutter:
-
-```powershell
-cd C:\Users\araya\Downloads\MFUguiding\frontend
+cd frontend
 flutter analyze
 flutter test
 ```
 
-## Troubleshooting
+Complete the manual checks in [`docs/ACCEPTANCE-TESTS.md`](docs/ACCEPTANCE-TESTS.md) before describing the project as ready for examination.
 
-- `healthz = 503`: Backend เปิดแล้วแต่ MongoDB ยังไม่พร้อม ตรวจ URI แบบ `mongodb+srv://`, database `indoor_navigation` และเพิ่ม Public IP ปัจจุบันใน Atlas Network Access
-- Backend ตอบ `503` แล้ว process ปิด: ดู log จาก `node -r dotenv/config server.js`; `ReplicaSetNoPrimary` หรือ TLS error มักเกิดจาก Atlas Network Access, URI เก่า หรือการใช้ Node 24 กับ dependency เก่า ให้ใช้ Node 20 LTS
-- `No route to host`: APK ฝัง LAN IP เก่าของคอม ตรวจ `ipconfig`, ทดสอบ URL จาก browser มือถือ แล้ว build APK ใหม่ด้วย IP ปัจจุบัน
-- `curl/Invoke-WebRequest` ได้ผลต่างกัน: ใช้ `curl.exe --noproxy "*"` เพราะเครื่องอาจมี `HTTP_PROXY`
-- `Cannot connect to backend`: ตรวจ IP, พอร์ต 8097, Backend, Windows Firewall และ client isolation ของ Wi-Fi
-- `zone_model_loaded = false`: ตรวจ `model/models/zone_classifier.joblib` หรือฝึกโมเดลใหม่
-- `Unknown AS-Project BSSID`: เพิ่ม BSSID prefix ใน `connected_wifi_service.dart`
-- หมุดไม่เปลี่ยนโซน: ตรวจว่ามือถือ roaming ไป AP ใหม่จริง และ BSSID ตรงกับ mapping
-- `Redis connection failed`: ข้ามได้ในการทดสอบ local navigation
-- `JAVA_HOME is not set`: ใช้ JDK ที่ `C:\Program Files\Android\Android Studio\jbr`
-- build ค้าง: ปิด Android Studio/โปรเซส Dart ที่ค้าง เปิด terminal ใหม่ แล้วรัน `flutter clean` อีกครั้ง
+## Documentation
 
-## กรณี AP บางตัวดับ
+| Document | Purpose |
+|---|---|
+| [`docs/PROJECT-OVERVIEW.md`](docs/PROJECT-OVERVIEW.md) | scope, features, limitations, and validation summary |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | components, data flow, positioning and routing architecture |
+| [`docs/DOCKER-GUIDE.md`](docs/DOCKER-GUIDE.md) | complete Docker setup and troubleshooting |
+| [`docs/API-REFERENCE.md`](docs/API-REFERENCE.md) | backend endpoints, access levels, requests, and responses |
+| [`docs/DATABASE-SCHEMA.md`](docs/DATABASE-SCHEMA.md) | MongoDB collections, fields, indexes, and relationships |
+| [`docs/MODEL-DOCUMENTATION.md`](docs/MODEL-DOCUMENTATION.md) | positioning pipeline, routing, configuration, and calibration |
+| [`docs/USER-ADMIN-MANUAL.md`](docs/USER-ADMIN-MANUAL.md) | User and Admin operating manual |
+| [`docs/ACCEPTANCE-TESTS.md`](docs/ACCEPTANCE-TESTS.md) | release and examination test checklist |
+| [`RUN_FULL_SYSTEM.md`](RUN_FULL_SYSTEM.md) | detailed local commands and project handover notes |
 
-- มือถือเครื่องเดียวไม่สามารถยืนยันได้แน่นอนว่า AP ดับ จึงควรแสดงเป็น `suspected unavailable`
-- ถ้ามือถือข้ามจาก AP หนึ่งไปอีก AP หนึ่ง ระบบยังยืนยัน AP ใหม่ตามจำนวน observation และคำนวณเส้นทางใหม่ได้
-- หมุดต้องเดินผ่านเส้นทางบนแผนที่ ไม่กระโดดข้ามพื้นที่ และหยุดที่ตำแหน่งล่าสุดที่ยืนยันได้แทนการเดินเองถึงปลายทาง
-- RSSI ต่ำมาก, อ่าน BSSID ไม่ได้ หรือหลุดจาก `AS-Project` ต้องลด confidence และแจ้งว่าตำแหน่งเป็นค่าประมาณ
-- เมื่อเชื่อม Cisco Controller ในอนาคต ควรใช้สถานะ Registered/Up และเวลาที่พบ AP ล่าสุดเป็นแหล่งตรวจ AP outage หลัก
+## Security and repository rules
 
-รายละเอียด API เพิ่มเติมอยู่ที่ `docs/INDOOR-NAVIGATION-BACKEND-API.md`
+Never commit:
+
+- `.env` or `.env.local` files;
+- MongoDB URIs, database passwords, API keys, or Bearer tokens;
+- real seeded user passwords;
+- Android signing keys or production service configuration;
+- screenshots containing credentials or personal identifiers.
+
+Before pushing, run:
+
+```powershell
+git status --short
+git diff --check
+git diff --cached
+```
+
+Rotate any credential that has previously appeared in source code, terminal screenshots, chat, or Git history. Removing a secret from the latest file does not remove it from earlier commits.
+
+## License and academic use
+
+No open-source license is currently declared. Unless the project owner adds one, treat the repository as an academic project shared only with authorized reviewers.

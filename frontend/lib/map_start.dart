@@ -198,6 +198,7 @@ class _MapStartPageState extends State<MapStartPage> {
         _error = null;
       });
     } on ConnectedWifiException catch (error) {
+      if (_arrived) return;
       if (mounted) {
         setState(() {
           _error = error.message;
@@ -206,6 +207,7 @@ class _MapStartPageState extends State<MapStartPage> {
         });
       }
     } on NavigationApiException catch (error) {
+      if (_arrived) return;
       if (mounted) {
         setState(() {
           _error = error.message;
@@ -267,6 +269,8 @@ class _MapStartPageState extends State<MapStartPage> {
         _arrived = arrived;
       });
       if (arrived) {
+        _wifiTimer?.cancel();
+        _motionTimer?.cancel();
         try {
           await _navigationApi.completeSession(
             sessionId: _sessionId!,
@@ -1132,15 +1136,67 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
   }
 
   List<Map> _connectRouteOrigin(List<Map> route, Offset? current) {
-    if (current == null) return route;
+    if (current == null || route.isEmpty) return route;
+    final points = route
+        .where((point) => point['x'] is num && point['y'] is num)
+        .map(
+          (point) => Offset(
+            (point['x'] as num).toDouble(),
+            (point['y'] as num).toDouble(),
+          ),
+        )
+        .toList();
+    if (points.length < 2) {
+      return [
+        {'x': current.dx, 'y': current.dy},
+      ];
+    }
+
+    // Project the marker onto the closest remaining route segment and remove
+    // points behind it. Connecting to waypoint #2 directly caused a short
+    // back-and-forth section near the marker.
+    var nearest = points.first;
+    var nearestSegment = 0;
+    var nearestDistance = double.infinity;
+    for (var index = 0; index < points.length - 1; index++) {
+      final start = points[index];
+      final delta = points[index + 1] - start;
+      final lengthSquared = delta.dx * delta.dx + delta.dy * delta.dy;
+      final fraction = lengthSquared == 0
+          ? 0.0
+          : (((current.dx - start.dx) * delta.dx +
+                        (current.dy - start.dy) * delta.dy) /
+                    lengthSquared)
+                .clamp(0.0, 1.0);
+      final projected = start + delta * fraction;
+      final distance = (current - projected).distance;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = projected;
+        nearestSegment = index;
+      }
+    }
+
     final connected = <Map>[
       {'x': current.dx, 'y': current.dy},
     ];
-    if (route.length > 1) connected.addAll(route.skip(1));
+    if ((nearest - current).distance > 0.08) {
+      connected.add({'x': nearest.dx, 'y': nearest.dy});
+    }
+    for (final point in points.skip(nearestSegment + 1)) {
+      final previous = connected.last;
+      final distance = math.sqrt(
+        math.pow(point.dx - (previous['x'] as num).toDouble(), 2) +
+            math.pow(point.dy - (previous['y'] as num).toDouble(), 2),
+      );
+      if (distance > 0.08) {
+        connected.add({'x': point.dx, 'y': point.dy});
+      }
+    }
     return connected;
   }
 
-  void _followUser() {
+  void _followUser({bool animate = true}) {
     if (!mounted) return;
     final current = widget.currentPosition;
     if (current == null || current['x'] is! num || current['y'] is! num) return;
@@ -1149,7 +1205,7 @@ class _FollowNavigationMapState extends State<_FollowNavigationMap>
         (current['x'] as num).toDouble(),
         (current['y'] as num).toDouble(),
       ),
-      animate: true,
+      animate: animate,
     );
   }
 

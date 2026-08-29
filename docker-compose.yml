@@ -10,13 +10,31 @@ services:
       timeout: 5s
       retries: 5
 
+  model:
+    build:
+      context: ./model
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      PORT: 8001
+    ports:
+      - "${MODEL_BIND_IP:-127.0.0.1}:${MODEL_PORT:-8001}:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   backend:
     build:
       context: ./backend-node
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true
     env_file:
-      - ${BACKEND_ENV_FILE:-./backend-node/.env.local}
+      - ${BACKEND_ENV_FILE:-./backend-node/.env}
     environment:
       NODE_ENV: ${BACKEND_NODE_ENV:-development}
       PORT: 8082
@@ -24,44 +42,22 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      POSITIONING_MODE: http
+      POSITIONING_SERVICE_URL: http://model:8001
+      POSITIONING_SERVICE_TIMEOUT_MS: ${POSITIONING_SERVICE_TIMEOUT_MS:-5000}
     depends_on:
       redis:
         condition: service_healthy
+      model:
+        condition: service_healthy
     ports:
-      - "${BACKEND_BIND_IP:-127.0.0.1}:${BACKEND_PORT:-8095}:8082"
+      - "${BACKEND_BIND_IP:-0.0.0.0}:${BACKEND_PORT:-8097}:8082"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8082/healthz >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
-
-  frontend:
-    build:
-      context: ./frontend-vue
-      dockerfile: Dockerfile
-      target: server-runner
-      args:
-        VUE_APP_API_BASE_URL: /
-        VUE_APP_SOCKET_URL: same-origin
-        VUE_APP_CLIENTID: ${GOOGLE_CLIENT_ID:-}
-        VUE_APP_SCOPE: ${GOOGLE_OAUTH_SCOPE:-profile email}
-        VUE_APP_PROMPT: ${GOOGLE_OAUTH_PROMPT:-select_account}
-        VUE_APP_AUTH_SYSTEM: ${FRONTEND_AUTH_SYSTEM:-newSystem}
-        VUE_APP_PROJECT_APP_ID: ${FRONTEND_PROJECT_APP_ID:-newSystem}
-        VUE_APP_PROJECT_PERMISSION_ROOT_PATH: ${FRONTEND_PROJECT_PERMISSION_ROOT_PATH:-/new-system/security/permission}
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "${FRONTEND_BIND_IP:-127.0.0.1}:${FRONTEND_PORT:-8086}:80"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      start_period: 30s
 
 volumes:
   redis-data:

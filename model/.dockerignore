@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+navigation_outputs/
+*.png
+README.md

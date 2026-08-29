@@ -12,7 +12,7 @@ FROM node:18-alpine@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9b
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=8097
+ENV PORT=8082
 
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node . .
